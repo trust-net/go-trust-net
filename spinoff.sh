@@ -11,5 +11,5 @@ fi
 
 docker run -it --rm --publish $1:30303 \
 	--name node-$1 \
-	--entrypoint /go/bin/pager \
+	--entrypoint /go/bin/app \
 	p2p-pager -name Node@$1 -bootnode $2

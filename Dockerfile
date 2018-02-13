@@ -10,8 +10,8 @@ ADD . /go/src/github.com/trust-net/go-trust-net
 #RUN go get github.com/ethereum/go-ethereum
 #RUN go get github.com/satori/go.uuid
 
-RUN go install github.com/trust-net/go-trust-net/pager
+RUN go install github.com/trust-net/go-trust-net/app
 
-ENTRYPOINT /go/bin/pager
+ENTRYPOINT /go/bin/app
 
 EXPOSE 30303
