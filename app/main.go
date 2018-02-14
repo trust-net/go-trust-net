@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/protocol/pager"
+	"github.com/trust-net/go-trust-net/protocol/counter"
 	"github.com/trust-net/go-trust-net/protocol"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -27,7 +28,10 @@ type KeyPair struct {
 
 const cmdPrompt = "Command: "
 
-func CLI(c chan int, srv *p2p.Server, mgr *pager.PagerProtocolManager) {
+var counterMgr *counter.CountrProtocolManager
+var pagerMgr *pager.PagerProtocolManager
+
+func CLI(c chan int, srv *p2p.Server) {
 	for {
 		fmt.Printf(cmdPrompt)
 		defer func() { c <- 1 }()
@@ -74,7 +78,7 @@ func CLI(c chan int, srv *p2p.Server, mgr *pager.PagerProtocolManager) {
 							MsgText: text,
 							MsgId:	 *protocol.BytesToByte16(id.Bytes()),
 						}
-						log.AppLogger().Debug("sent message: '%s' to %d peers", text, mgr.Broadcast(msg))
+						log.AppLogger().Debug("sent message: '%s' to %d peers", text, pagerMgr.Broadcast(msg))
 					case "add":
 						wordScanner.Scan()
 						if peerNode := wordScanner.Text(); len(peerNode) == 0 {
@@ -83,7 +87,7 @@ func CLI(c chan int, srv *p2p.Server, mgr *pager.PagerProtocolManager) {
 							var err = error(nil)
 							if node, err := discover.ParseNode(peerNode); err == nil {
 								log.AppLogger().Debug("adding peer node: '%s'", peerNode)
-								err = mgr.AddPeer(node)
+								err = pagerMgr.AddPeer(node)
 							}
 							if err != nil {
 								log.AppLogger().Error("failed to add peer node: %s", err)
@@ -182,13 +186,15 @@ func main() {
 		nat = nil
 	}
 	
-	pagerMgr := pager.NewPagerProtocolManager(func(from, text string){
+	pagerMgr = pager.NewPagerProtocolManager(func(from, text string){
 		fmt.Printf("\n########## Msg From '%s' #########\n", from)
 		fmt.Printf("%s\n#######################\n%s", text, cmdPrompt)
 
 	})
+	counterMgr = counter.NewCountrProtocolManager()
 	protocols := make([]p2p.Protocol,0)
 	protocols = append(protocols, pagerMgr.Protocol())
+	protocols = append(protocols, counterMgr.Protocol())
 	
 	serverConfig := p2p.Config{
 		MaxPeers:   10,
@@ -218,9 +224,10 @@ func main() {
 		log.AppLogger().Info("started server: %s", srv.NodeInfo().Enode)
 		c := make(chan int)
 		log.AppLogger().Info("starting CLI now...")
-		go CLI(c, srv, pagerMgr)
+		go CLI(c, srv)
 		<-c
 		log.AppLogger().Info("done.")
+//		counterMgr.Stop()
 		srv.Stop()
 	}
 }

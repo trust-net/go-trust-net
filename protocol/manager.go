@@ -27,6 +27,7 @@ const (
 	ErrorMaxPeersReached = 0x02
 	ErrorUnknownMessageType = 0x03
 	ErrorNotImplemented = 0x04
+	ErrorSyncFailed = 0x05
 )
 
 // base protocol manager implementation for shared data and code,
@@ -34,7 +35,7 @@ const (
 type ManagerBase struct {
 	db db.PeerSetDb
 	peerCount	int
-	handshakeMsg HandshakeMsg
+	handshakeMsg *HandshakeMsg
 }
 
 
@@ -54,7 +55,7 @@ func (mgr *ManagerBase) SetDb(db db.PeerSetDb) {
 	mgr.db = db
 }
 
-func (mgr *ManagerBase) SetHandshakeMsg(handshakeMsg HandshakeMsg) {
+func (mgr *ManagerBase) SetHandshakeMsg(handshakeMsg *HandshakeMsg) {
 	mgr.handshakeMsg = handshakeMsg
 }
 
@@ -64,9 +65,10 @@ func (mgr *ManagerBase) AddPeer(node *discover.Node) error {
 	return NewProtocolError(ErrorNotImplemented, "protocol manager cannot add peer")
 }
 
+// perform sub protocol handshake
 func (mgr *ManagerBase) Handshake(peer *p2p.Peer, ws p2p.MsgReadWriter) error {
 	// send our status to the peer
-	if err := p2p.Send(ws, Handshake, mgr.handshakeMsg); err != nil {
+	if err := p2p.Send(ws, Handshake, *mgr.handshakeMsg); err != nil {
 		return NewProtocolError(ErrorHandshakeFailed, err.Error())
 	}
 

@@ -7,17 +7,14 @@ import (
 	"github.com/trust-net/go-trust-net/protocol"
 )
 
-const (
-	// maximum number of peers to connect at any given time
-	maxPeers = 10
-)
-
 // short protocol name for handshake negotiation
 var ProtocolName = "pager"
 
-// known protocol versions
 const (
+	// current protocol version
 	poc1 = 0x01
+	// maximum number of peers to connect at any given time
+	maxPeers = 10
 )
 
 // supported versions of the protocol for this codebase
@@ -43,8 +40,9 @@ func NewPagerProtocolManager(callback PageHandler) *PagerProtocolManager {
 		callback: callback,
 	}
 	mgr.SetDb(db.NewPeerSetDbInMemory())
-	mgr.SetHandshakeMsg(defaultHandshake)
+	mgr.SetHandshakeMsg(&defaultHandshake)
 	mgr.logger = log.NewLogger(mgr)
+	mgr.logger.Debug("Created new instance of pager protocol manager")
 	return &mgr
 }
 
