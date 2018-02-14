@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/trust-net/go-trust-net/log"
+	"github.com/trust-net/go-trust-net/protocol/pager"
 	"github.com/trust-net/go-trust-net/protocol"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -26,7 +27,7 @@ type KeyPair struct {
 
 const cmdPrompt = "Command: "
 
-func CLI(c chan int, srv *p2p.Server, mgr *protocol.PagerProtocolManager) {
+func CLI(c chan int, srv *p2p.Server, mgr *pager.PagerProtocolManager) {
 	for {
 		fmt.Printf(cmdPrompt)
 		defer func() { c <- 1 }()
@@ -69,7 +70,7 @@ func CLI(c chan int, srv *p2p.Server, mgr *protocol.PagerProtocolManager) {
 							}
 						}
 						id, _ := uuid.NewV1()
-						msg := protocol.BroadcastTextMsg{
+						msg := pager.BroadcastTextMsg{
 							MsgText: text,
 							MsgId:	 *protocol.BytesToByte16(id.Bytes()),
 						}
@@ -181,7 +182,7 @@ func main() {
 		nat = nil
 	}
 	
-	pagerMgr := protocol.NewPagerProtocolManager(func(from, text string){
+	pagerMgr := pager.NewPagerProtocolManager(func(from, text string){
 		fmt.Printf("\n########## Msg From '%s' #########\n", from)
 		fmt.Printf("%s\n#######################\n%s", text, cmdPrompt)
 

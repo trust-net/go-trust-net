@@ -1,4 +1,4 @@
-package protocol
+package pager
 
 import (
 	"time"
@@ -6,6 +6,7 @@ import (
 	"github.com/trust-net/go-trust-net/db"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
+	"github.com/trust-net/go-trust-net/protocol"
 )
 
 const (
@@ -13,8 +14,19 @@ const (
 	maxPeers = 10
 )
 
-var DefaultHandshake = HandshakeMsg {
-	NetworkId: *BytesToByte16([]byte{1,2,3,4}),
+// short protocol name for handshake negotiation
+var ProtocolName = "pager"
+
+// known protocol versions
+const (
+	poc1 = 0x01
+)
+
+// supported versions of the protocol for this codebase
+var ProtocolVersion = uint(poc1)
+
+var DefaultHandshake = protocol.HandshakeMsg {
+	NetworkId: *protocol.BytesToByte16([]byte{1,2,3,4}),
 }
 
 // signature for callback function when a page is recieved
@@ -46,13 +58,13 @@ func (mgr *PagerProtocolManager) Db() db.PeerSetDb {
 func (mgr *PagerProtocolManager) AddPeer(node *discover.Node) error {
 	// we don't have a p2p server for individual protocol manager, and hence cannot add a node
 	// this will need to be done from outside, at the application level
-	return NewProtocolError(ErrorNotImplemented, "protocol manager cannot add peer")
+	return protocol.NewProtocolError(protocol.ErrorNotImplemented, "protocol manager cannot add peer")
 }
 
 func (mgr *PagerProtocolManager) Handshake(peer *p2p.Peer, ws p2p.MsgReadWriter) error {
 	// send our status to the peer
-	if err := p2p.Send(ws, Handshake, DefaultHandshake); err != nil {
-		return NewProtocolError(ErrorHandshakeFailed, err.Error())
+	if err := p2p.Send(ws, protocol.Handshake, DefaultHandshake); err != nil {
+		return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, err.Error())
 	}
 
 	// wait on peer's status for upto 5 seconds
@@ -71,32 +83,32 @@ func (mgr *PagerProtocolManager) Handshake(peer *p2p.Peer, ws p2p.MsgReadWriter)
 		case <- done:
 			break
 		case <- wait.C:
-			err = NewProtocolError(ErrorHandshakeFailed, "timed out waiting for handshake status")
+			err = protocol.NewProtocolError(protocol.ErrorHandshakeFailed, "timed out waiting for handshake status")
 	}
 	if err != nil {
 		return err
 	}
 	
 	// make sure its a handshake status message
-	if msg.Code != Handshake {
-		return NewProtocolError(ErrorHandshakeFailed, "first message needs to be handshake status")
+	if msg.Code != protocol.Handshake {
+		return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, "first message needs to be handshake status")
 	}
-	var handshake HandshakeMsg
+	var handshake protocol.HandshakeMsg
 	err = msg.Decode(&handshake)
 	if err != nil {
-		return NewProtocolError(ErrorHandshakeFailed, err.Error())
+		return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, err.Error())
 	}
 	
 	// validate handshake message
 	switch {
 		case handshake.NetworkId != DefaultHandshake.NetworkId:
-			return NewProtocolError(ErrorHandshakeFailed, "network ID does not match")
+			return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, "network ID does not match")
 		case handshake.ShardId != DefaultHandshake.ShardId:
-			return NewProtocolError(ErrorHandshakeFailed, "shard ID does not match")
+			return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, "shard ID does not match")
 	}
 
 	// add the peer into our DB
-	node := NewNode(peer, ws)
+	node := protocol.NewNode(peer, ws)
 	if err = mgr.db.RegisterPeerNode(node); err != nil {
 		return err
 	} else {
@@ -109,7 +121,7 @@ func (mgr *PagerProtocolManager) Handshake(peer *p2p.Peer, ws p2p.MsgReadWriter)
 func (mgr *PagerProtocolManager) Broadcast(msg BroadcastTextMsg) int {
 	count := 0
 	for _, node := range mgr.db.PeerNodesWithMsgNotSeen(msg.MsgId) {
-		peer, _ := node.(*Node)
+		peer, _ := node.(*protocol.Node)
 		// first mark this peer as has seen this message, so we can stop cyclic receive immediately
 		peer.AddTx(msg.MsgId)
 		p2p.Send(peer.Conn(), BroadcastText, msg)
@@ -150,7 +162,7 @@ func (mgr *PagerProtocolManager) Protocol() p2p.Protocol {
 
 				if mgr.peerCount >= maxPeers {
 					mgr.logger.Info("Max peer capacity, cannot accept '%s'", peer.Name())
-					return NewProtocolError(ErrorMaxPeersReached, "already connected to maximum peer capacity")
+					return protocol.NewProtocolError(protocol.ErrorMaxPeersReached, "already connected to maximum peer capacity")
 				}
 
 				// initiate handshake with the new peer
@@ -180,7 +192,7 @@ func (mgr *PagerProtocolManager) Protocol() p2p.Protocol {
 							}
 						default:
 							// error condition, unknown protocol message
-							return NewProtocolError(ErrorUnknownMessageType, "unknown protocol message recieved")
+							return protocol.NewProtocolError(protocol.ErrorUnknownMessageType, "unknown protocol message recieved")
 					}
 				}
 			},
