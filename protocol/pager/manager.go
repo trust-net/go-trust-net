@@ -2,10 +2,8 @@ package pager
 
 import (
 	"github.com/trust-net/go-trust-net/log"
-	"github.com/trust-net/go-trust-net/common"
 	"github.com/trust-net/go-trust-net/db"
 	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/trust-net/go-trust-net/protocol"
 )
 
@@ -25,17 +23,16 @@ const (
 // supported versions of the protocol for this codebase
 var ProtocolVersion = uint(poc1)
 
-var DefaultHandshake = protocol.HandshakeMsg {
+var defaultHandshake = protocol.HandshakeMsg {
 	NetworkId: *protocol.BytesToByte16([]byte{1,2,3,4}),
 }
 
 // signature for callback function when a page is recieved
 type PageHandler func (from, txt string)
 
-// a "byoi" protocol manager implementation
+// a "pager" protocol manager implementation
 type PagerProtocolManager struct {
-	db db.PeerSetDb
-	peerCount	int
+	protocol.ManagerBase
 	logger log.Logger
 	callback PageHandler
 }
@@ -43,72 +40,17 @@ type PagerProtocolManager struct {
 // create a new instance of pager protocol manager
 func NewPagerProtocolManager(callback PageHandler) *PagerProtocolManager {
 	mgr := PagerProtocolManager{
-		db: db.NewPeerSetDbInMemory(),
-		peerCount: 0,
 		callback: callback,
 	}
+	mgr.SetDb(db.NewPeerSetDbInMemory())
+	mgr.SetHandshakeMsg(defaultHandshake)
 	mgr.logger = log.NewLogger(mgr)
 	return &mgr
 }
 
-func (mgr *PagerProtocolManager) Db() db.PeerSetDb {
-	return mgr.db
-}
-
-func (mgr *PagerProtocolManager) AddPeer(node *discover.Node) error {
-	// we don't have a p2p server for individual protocol manager, and hence cannot add a node
-	// this will need to be done from outside, at the application level
-	return protocol.NewProtocolError(protocol.ErrorNotImplemented, "protocol manager cannot add peer")
-}
-
-func (mgr *PagerProtocolManager) Handshake(peer *p2p.Peer, ws p2p.MsgReadWriter) error {
-	// send our status to the peer
-	if err := p2p.Send(ws, protocol.Handshake, DefaultHandshake); err != nil {
-		return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, err.Error())
-	}
-
-	var msg p2p.Msg
-	var err error
-	err = common.RunTimeBound(5, func() error {
-			msg, err = ws.ReadMsg()
-			return err
-		}, protocol.NewProtocolError(protocol.ErrorHandshakeFailed, "timed out waiting for handshake status"))
-	if err != nil {
-		return err
-	}
-
-	// make sure its a handshake status message
-	if msg.Code != protocol.Handshake {
-		return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, "first message needs to be handshake status")
-	}
-	var handshake protocol.HandshakeMsg
-	err = msg.Decode(&handshake)
-	if err != nil {
-		return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, err.Error())
-	}
-	
-	// validate handshake message
-	switch {
-		case handshake.NetworkId != DefaultHandshake.NetworkId:
-			return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, "network ID does not match")
-		case handshake.ShardId != DefaultHandshake.ShardId:
-			return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, "shard ID does not match")
-	}
-
-	// add the peer into our DB
-	node := protocol.NewNode(peer, ws)
-	if err = mgr.db.RegisterPeerNode(node); err != nil {
-		return err
-	} else {
-		mgr.peerCount++
-		node.SetStatus(&handshake)
-	}
-	return nil
-}
-
 func (mgr *PagerProtocolManager) Broadcast(msg BroadcastTextMsg) int {
 	count := 0
-	for _, node := range mgr.db.PeerNodesWithMsgNotSeen(msg.MsgId) {
+	for _, node := range mgr.Db().PeerNodesWithMsgNotSeen(msg.MsgId) {
 		peer, _ := node.(*protocol.Node)
 		// first mark this peer as has seen this message, so we can stop cyclic receive immediately
 		peer.AddTx(msg.MsgId)
@@ -127,9 +69,9 @@ func (mgr *PagerProtocolManager) handleBroadcastMsg(msg p2p.Msg, from *p2p.Peer)
 		mgr.logger.Error("%s", err)
 	} else {
 		// first check if this is not a resend before doing anything with this message
-		if !mgr.db.HaveISeenIt(peerMessage.MsgId) {
+		if !mgr.Db().HaveISeenIt(peerMessage.MsgId) {
 			// mark the sender as "seen" for this message
-			mgr.db.PeerNodeForId(from.ID().String()).AddTx(peerMessage.MsgId)
+			mgr.Db().PeerNodeForId(from.ID().String()).AddTx(peerMessage.MsgId)
 			// call the registered callback handler
 			mgr.callback(from.Name(), peerMessage.MsgText)
 			// forward to all other peers
@@ -148,7 +90,7 @@ func (mgr *PagerProtocolManager) Protocol() p2p.Protocol {
 			Length:		ProtocolMsgCount,
 			Run:		func(peer *p2p.Peer, ws p2p.MsgReadWriter) error {
 
-				if mgr.peerCount >= maxPeers {
+				if mgr.PeerCount() >= maxPeers {
 					mgr.logger.Info("Max peer capacity, cannot accept '%s'", peer.Name())
 					return protocol.NewProtocolError(protocol.ErrorMaxPeersReached, "already connected to maximum peer capacity")
 				}
@@ -160,8 +102,8 @@ func (mgr *PagerProtocolManager) Protocol() p2p.Protocol {
 				} else {
 					defer func() {
 						mgr.logger.Debug("Disconnecting from '%s'", peer.Name())
-						mgr.db.UnRegisterPeerNodeForId(peer.ID().String())
-						mgr.peerCount--
+						mgr.Db().UnRegisterPeerNodeForId(peer.ID().String())
+						mgr.DecrPeer()
 					}()
 				}
 				

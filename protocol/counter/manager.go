@@ -10,7 +10,7 @@ import (
 )
 
 // short protocol name for handshake negotiation
-var ProtocolName = "pager"
+var ProtocolName = "countr"
 
 // known protocol versions
 const (
