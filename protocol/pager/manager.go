@@ -1,8 +1,8 @@
 package pager
 
 import (
-	"time"
 	"github.com/trust-net/go-trust-net/log"
+	"github.com/trust-net/go-trust-net/common"
 	"github.com/trust-net/go-trust-net/db"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
@@ -67,28 +67,16 @@ func (mgr *PagerProtocolManager) Handshake(peer *p2p.Peer, ws p2p.MsgReadWriter)
 		return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, err.Error())
 	}
 
-	// wait on peer's status for upto 5 seconds
-	wait := time.NewTimer(5 * time.Second)
-	defer wait.Stop()
 	var msg p2p.Msg
 	var err error
-	done := make(chan int)
-	go func(){
-		var err error
-		if msg, err = ws.ReadMsg(); err == nil {
-			done <- 1
-		}
-	}()
-	select {
-		case <- done:
-			break
-		case <- wait.C:
-			err = protocol.NewProtocolError(protocol.ErrorHandshakeFailed, "timed out waiting for handshake status")
-	}
+	err = common.RunTimeBound(5, func() error {
+			msg, err = ws.ReadMsg()
+			return err
+		}, protocol.NewProtocolError(protocol.ErrorHandshakeFailed, "timed out waiting for handshake status"))
 	if err != nil {
 		return err
 	}
-	
+
 	// make sure its a handshake status message
 	if msg.Code != protocol.Handshake {
 		return protocol.NewProtocolError(protocol.ErrorHandshakeFailed, "first message needs to be handshake status")
