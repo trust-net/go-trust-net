@@ -62,11 +62,17 @@ func (chain *BlockChainInMem) AddBlockNode(block Block) error {
 	}
 	chain.lock.Lock()
 	defer chain.lock.Unlock()
+	if _, found := chain.nodes[*block.Hash()]; found {
+		return NewCoreError("duplicate block")
+	}
 	if parent, ok := chain.nodes[*block.Previous().Bytes()]; !ok {
 		return NewCoreError("orphan block")
 	} else {
+		// add the node into our data store
 		node := NewBlockNode(block, parent.Depth()+1)
 		chain.nodes[*node.Hash()] = node
+		// update parent's children list
+		parent.AddChild(node.Hash())
 		// update longest chain marker
 		if chain.depth < node.Depth() {
 			chain.td = block.TD()

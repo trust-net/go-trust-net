@@ -72,6 +72,47 @@ func TestBlockChainInMemAddNodeOrphan(t *testing.T) {
 	}
 }
 
+
+func TestBlockChainInMemAddNodeDuplicate(t *testing.T) {
+	chain := NewBlockChainInMem()
+	myNode := NewSimpleNodeInfo("test node")
+	// add a block to chain
+	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
+	block.ComputeHash()
+	chain.AddBlockNode(block)
+	// try adding same block again
+	if err := chain.AddBlockNode(block); err == nil {
+		t.Errorf("Failed to detected duplicate block")
+	}
+}
+
+func TestBlockChainInMemAddNodeForwardLink(t *testing.T) {
+	chain := NewBlockChainInMem()
+	myNode := NewSimpleNodeInfo("test node")
+	// add an ancestor block to chain
+	ancestor := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
+	ancestor.ComputeHash()
+	chain.AddBlockNode(ancestor)
+	// now add two child nodes to same ancestor
+	child1 := NewSimpleBlock(ancestor.Hash(), chain.genesis.Hash(), myNode)
+	child1.ComputeHash()
+	chain.AddBlockNode(child1)
+	child2 := NewSimpleBlock(ancestor.Hash(), chain.genesis.Hash(), myNode)
+	child2.ComputeHash()
+	chain.AddBlockNode(child2)
+	// verify that ancestor has forward link to children
+	parent, _ := chain.BlockNode(ancestor.Hash())
+	if len(parent.Children()) != 2 {
+		t.Errorf("chain did not update forward links")
+	}
+	if parent.Children()[0] != child1.Hash() {
+		t.Errorf("chain added incorrect forward link 1st child: Expected '%d', Found '%d'", child1.Hash(), parent.Children()[0])
+	}
+	if parent.Children()[1] != child2.Hash() {
+		t.Errorf("chain added incorrect forward link 2nd child: Expected '%d', Found '%d'", child2.Hash(), parent.Children()[1])
+	}
+}
+
 func makeBlocks(len int, parent *Byte64, genesis *Byte64, miner NodeInfo) []*SimpleBlock {
 	nodes := make([]*SimpleBlock, len)
 	for i := 0; i < len; i++ {
