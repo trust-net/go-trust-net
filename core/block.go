@@ -14,7 +14,7 @@ type Transaction interface {
 
 // interface to implement block headers
 type Header interface {
-	Bytes() []byte
+	Bytes() *Byte64
 }
 
 // interface for node information 
@@ -30,20 +30,18 @@ type Block interface {
 	TD() time.Duration
 	TXs() []Transaction
 	Genesis() Header
-	Since() time.Duration
-	Hash() []byte
+	Hash() *Byte64
 }
 
 // a simple blockchain spec implementation
 type SimpleBlock struct {
 	previous Header
 	miner NodeInfo
-	hash []byte
+	hash *Byte64
 	nonce Header
 	genesis Header
 	txs	[]Transaction
 	td	  time.Duration
-	since time.Duration
 }
 
 func (b *SimpleBlock) Previous() Header {
@@ -62,10 +60,6 @@ func (b *SimpleBlock) TD() time.Duration {
 	return b.td
 }
 
-func (b *SimpleBlock) Since() time.Duration {
-	return b.since
-}
-
 func (b *SimpleBlock) Genesis() Header {
 	return b.genesis
 }
@@ -74,32 +68,32 @@ func (b *SimpleBlock) TXs() []Transaction {
 	return b.txs
 }
 
-func (b *SimpleBlock) Hash() []byte {
+func (b *SimpleBlock) Hash() *Byte64 {
 	return b.hash
 }
 
 type SimpleHeader struct {
-	header []byte
+	header *Byte64
 }
 
-func (h *SimpleHeader) Bytes() []byte {
+func (h *SimpleHeader) Bytes() *Byte64 {
 	return h.header
 }
 
-func NewSimpleHeader(header string) *SimpleHeader {
+func NewSimpleHeader(header *Byte64) *SimpleHeader {
 	return &SimpleHeader {
-		header: []byte(header),
+		header: header,
 	}
 }
 
 func (b *SimpleBlock) ComputeHash() {
 	data := make([]byte,0)
-	data = append(data, b.previous.Bytes()...)
+	data = append(data, b.previous.Bytes().Bytes()...)
 	data = append(data, []byte(b.miner.Id())...)
-	data = append(data, b.genesis.Bytes()...)
+	data = append(data, b.genesis.Bytes().Bytes()...)
 	data = append(data, []byte(fmt.Sprintf("%d",b.td))...)
 	hash := sha512.Sum512(data)
-	b.hash = hash[:]
+	b.hash = BytesToByte64(hash[:])
 }
 
 type SimpleNodeInfo struct {
@@ -116,14 +110,13 @@ func NewSimpleNodeInfo(id string) *SimpleNodeInfo {
 	}
 }
 
-func NewSimpleBlock(previous Header, genesis Header, since time.Duration, miner NodeInfo) *SimpleBlock {
+func NewSimpleBlock(previous *Byte64, genesis *Byte64, miner NodeInfo) *SimpleBlock {
 	return &SimpleBlock{
-		previous: previous,
+		previous: NewSimpleHeader(previous),
 		miner: miner,
-		genesis: genesis,
-		since: since,
-		td: time.Duration(time.Now().UnixNano()) - since,
+		genesis: NewSimpleHeader(genesis),
+		td: time.Duration(time.Now().UnixNano()),
 		txs: make([]Transaction,0),
-		hash: make([]byte,0),
+		hash: nil,
 	}
 }
