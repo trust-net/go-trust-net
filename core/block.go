@@ -14,7 +14,7 @@ type Transaction interface {
 
 // interface to implement block headers
 type Header interface {
-	String() string
+	Bytes() []byte
 }
 
 // interface for node information 
@@ -78,25 +78,42 @@ func (b *SimpleBlock) Hash() []byte {
 	return b.hash
 }
 
-type mySimpleHeader struct {
-	header string
+type SimpleHeader struct {
+	header []byte
 }
 
-func (h *mySimpleHeader) String() string {
+func (h *SimpleHeader) Bytes() []byte {
 	return h.header
 }
 
-func newMySimpleHeader(header string) *mySimpleHeader {
-	return &mySimpleHeader {
-		header: header,
+func NewSimpleHeader(header string) *SimpleHeader {
+	return &SimpleHeader {
+		header: []byte(header),
 	}
 }
 
 func (b *SimpleBlock) ComputeHash() {
-	data := ""
-	data += b.previous.String() + b.miner.Id() + b.genesis.String() + fmt.Sprintf("%d",b.td)
-	hash := sha512.Sum512([]byte(data))
+	data := make([]byte,0)
+	data = append(data, b.previous.Bytes()...)
+	data = append(data, []byte(b.miner.Id())...)
+	data = append(data, b.genesis.Bytes()...)
+	data = append(data, []byte(fmt.Sprintf("%d",b.td))...)
+	hash := sha512.Sum512(data)
 	b.hash = hash[:]
+}
+
+type SimpleNodeInfo struct {
+	id string
+}
+
+func (n *SimpleNodeInfo) Id() string {
+	return n.id
+}
+
+func NewSimpleNodeInfo(id string) *SimpleNodeInfo {
+	return &SimpleNodeInfo{
+		id: id,
+	}
 }
 
 func NewSimpleBlock(previous Header, genesis Header, since time.Duration, miner NodeInfo) *SimpleBlock {

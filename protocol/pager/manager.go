@@ -2,6 +2,7 @@ package pager
 
 import (
 	"github.com/trust-net/go-trust-net/log"
+	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/db"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/trust-net/go-trust-net/protocol"
@@ -21,7 +22,7 @@ const (
 var ProtocolVersion = uint(poc1)
 
 var defaultHandshake = protocol.HandshakeMsg {
-	NetworkId: *protocol.BytesToByte16([]byte{1,2,3,4}),
+	NetworkId: *core.BytesToByte16([]byte{1,2,3,4}),
 }
 
 // signature for callback function when a page is recieved

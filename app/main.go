@@ -7,9 +7,9 @@ import (
 	"flag"
 	"fmt"
 	"github.com/trust-net/go-trust-net/log"
+	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/protocol/pager"
 	"github.com/trust-net/go-trust-net/protocol/counter"
-	"github.com/trust-net/go-trust-net/protocol"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
@@ -76,7 +76,7 @@ func CLI(c chan int, srv *p2p.Server) {
 						id, _ := uuid.NewV1()
 						msg := pager.BroadcastTextMsg{
 							MsgText: text,
-							MsgId:	 *protocol.BytesToByte16(id.Bytes()),
+							MsgId:	 *core.BytesToByte16(id.Bytes()),
 						}
 						log.AppLogger().Debug("sent message: '%s' to %d peers", text, pagerMgr.Broadcast(msg))
 					case "add":

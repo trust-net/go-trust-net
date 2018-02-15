@@ -1,6 +1,7 @@
 package pager
 
 import (
+	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/protocol"
 )
 
@@ -17,6 +18,6 @@ var ProtocolMsgCount = uint64(msgCount)
 
 // a broadcast message for text message on the network during poc
 type BroadcastTextMsg struct {
-	MsgId protocol.Byte16
+	MsgId core.Byte16
 	MsgText string
 }
