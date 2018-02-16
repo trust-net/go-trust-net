@@ -27,6 +27,9 @@ func TestNewBlockNode(t *testing.T) {
 	if node.IsMainList() {
 		t.Errorf("Is main list: Expected: %d, Actual: %d", false, node.IsMainList())
 	}
+	if node.Block() != block {
+		t.Errorf("Block: Expected: %d, Actual: %d", block, node.Block())
+	}
 }
 
 func TestSetIsMain(t *testing.T) {

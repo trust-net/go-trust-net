@@ -84,6 +84,15 @@ func TestBlockChainInMemAddNodeUncomputed(t *testing.T) {
 	}
 }
 
+func TestBlockChainInMemAddNodeNil(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
+	chain := NewBlockChainInMem()
+//	myNode := NewSimpleNodeInfo("test node")
+//	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
+	if err := chain.AddBlockNode(nil); err == nil {
+		t.Errorf("Failed to detected nil block")
+	}
+}
 
 func TestBlockChainInMemAddNodeOrphan(t *testing.T) {
 	log.SetLogLevel(log.ERROR)
@@ -232,7 +241,7 @@ func TestBlockChainInMemRebalance(t *testing.T) {
 	}
 }
 
-func TestBlockChainInMemWalkThroughChain(t *testing.T) {
+func TestBlockChainInMemWalkThroughMainListOnly(t *testing.T) {
 	log.SetLogLevel(log.ERROR)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
@@ -255,9 +264,34 @@ func TestBlockChainInMemWalkThroughChain(t *testing.T) {
 		}
 	}
 	// ask for list of blocks starting at the ancestor
+	// should be ancestor, followed by chain1 nodes (3 nodes)
 	blocks := chain.Blocks(ancestor.Hash(), 10)
-	if len(blocks) != 4 {
-		t.Errorf("chain traversal did not return correct number of blocks: Expected '%d' Found '%d'", 4, len(blocks))
+	if len(blocks) != (len(chain1)+1) {
+		t.Errorf("chain traversal did not return correct number of blocks: Expected '%d' Found '%d'", 3, len(blocks))
+	}
+	expected := []*SimpleBlock{ancestor}
+	for i, block := range(append(expected, chain1...)) {
+		if blocks[i] != block {
+			t.Errorf("block at position [%d] is incorrect", i)
+		}
+	}
+}
+
+func TestBlockChainInMemWalkThroughOverMax(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
+	chain := NewBlockChainInMem()
+	myNode := NewSimpleNodeInfo("test node")
+	// now add a chain with more than max node
+	blocks := makeBlocks(maxBlocks+1, chain.genesis.Hash(), chain.genesis.Hash(), myNode)
+	for i, child := range(blocks) {
+		if err := chain.AddBlockNode(child); err != nil {
+			t.Errorf("chain failed to add block #%d: %s", i, err)
+		}
+	}
+	// ask for list of blocks more than maxBlocks limit
+	syncBlocks := chain.Blocks(chain.genesis.Hash(), maxBlocks+10)
+	if len(syncBlocks) > maxBlocks {
+		t.Errorf("chain traversal did not return correct number of blocks: Expected '%d' Found '%d'", maxBlocks, len(syncBlocks))
 	}
 }
 

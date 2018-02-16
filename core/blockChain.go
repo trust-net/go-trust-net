@@ -121,20 +121,28 @@ func (chain *BlockChainInMem) AddBlockNode(block Block) error {
 func (chain *BlockChainInMem) findMainListChild(parent, skipChild *BlockNode) *BlockNode {
 	for _, childHash := range (parent.Children()) {
 		child := chain.nodes[*childHash]
-		if child.IsMainList() && skipChild != nil && skipChild.Hash() != child.Hash() {
+		if child.IsMainList() && (skipChild == nil || skipChild.Hash() != child.Hash()) {
 			return child
 		}
 	}
 	return nil
 }
 
-func (chain *BlockChainInMem) Blocks(parent *Byte64, max uint64) []*BlockNode {
+func (chain *BlockChainInMem) Blocks(parent *Byte64, max uint64) []Block {
 	chain.lock.RLock()
 	defer chain.lock.RUnlock()
 	if max > maxBlocks {
 		max = maxBlocks
 	}
-	blocks := make([]*BlockNode, 0, max)
-	// TODO traverse DAG and fill in the list
+	blocks := make([]Block, 0, max)
+	// simple traversal down the main block chain list
+	chain.lock.RLock()
+	defer chain.lock.RUnlock()
+	for currNode, count := chain.nodes[*parent], uint64(0); currNode != nil && count < max; {
+		chain.logger.Debug("Traversing block at depth '%d' on main list", currNode.Depth())
+		blocks = append(blocks, currNode.Block())
+		currNode = chain.findMainListChild(currNode, nil)
+		count++
+	}
 	return blocks
 }
