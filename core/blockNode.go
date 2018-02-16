@@ -8,6 +8,7 @@ type BlockNode struct {
 	hash *Byte64
 	parent *Byte64
 	depth uint64
+	isMainList bool
 	children	 []*Byte64
 	lock sync.RWMutex
 }
@@ -17,15 +18,24 @@ func NewBlockNode(block Block, depth uint64) *BlockNode {
 		hash: block.Hash(),
 		parent: block.Previous().Bytes(),
 		depth: depth,
+		isMainList: false,
 		children: make([]*Byte64,0),
 	}
+}
+
+func (bn *BlockNode) IsMainList() bool{
+	return bn.isMainList
+}
+
+func (bn *BlockNode) SetMainList(isMainList bool) {
+	bn.isMainList = isMainList
 }
 
 func (bn *BlockNode) Lock() {
 	bn.lock.Lock()
 }
 
-func (bn *BlockNode) Unock() {
+func (bn *BlockNode) Unlock() {
 	bn.lock.Unlock()
 }
 

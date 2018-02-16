@@ -3,9 +3,11 @@ package core
 import (
     "testing"
     "time"
+	"github.com/trust-net/go-trust-net/log"
 )
 
 func TestNewBlockChainInMem(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
 	now := time.Duration(time.Now().UnixNano())
 	chain := NewBlockChainInMem()
 	if chain.depth != 0 {
@@ -17,9 +19,20 @@ func TestNewBlockChainInMem(t *testing.T) {
 	if now < (chain.td - time.Second * 1) {
 		t.Errorf("chain TD incorrect: Expected '%d' Found '%d'", now, chain.TD)
 	}
+	bn,_ := chain.BlockNode(chain.genesis.Hash())
+	if !bn.IsMainList() {
+		t.Errorf("did not set main list flag on genesis node")
+	}
+	if chain.Tip().Hash() != bn.Hash() {
+		t.Errorf("did not set block chain tip to genesis node")
+	}
+	if chain.Tip().Depth() != 0 {
+		t.Errorf("did not set depth of genesis node as 0")
+	}
 }
 
 func TestBlockChainInMemAddNode(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
@@ -27,9 +40,17 @@ func TestBlockChainInMemAddNode(t *testing.T) {
 	if err := chain.AddBlockNode(block); err != nil {
 		t.Errorf("Failed to add block into chain: '%s'", err)
 	}
+	bn,_ := chain.BlockNode(block.Hash())
+	if !bn.IsMainList() {
+		t.Errorf("did not update main list flag on new node")
+	}
+	if bn.Parent() != chain.genesis.Hash() {
+		t.Errorf("did not set parent link on new node")
+	}
 }
 
 func TestBlockChainInMemAddNodeDepthUpdate(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
@@ -42,6 +63,7 @@ func TestBlockChainInMemAddNodeDepthUpdate(t *testing.T) {
 
 
 func TestBlockChainInMemAddNodeTdUpdate(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
@@ -53,6 +75,7 @@ func TestBlockChainInMemAddNodeTdUpdate(t *testing.T) {
 }
 
 func TestBlockChainInMemAddNodeUncomputed(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
@@ -63,6 +86,7 @@ func TestBlockChainInMemAddNodeUncomputed(t *testing.T) {
 
 
 func TestBlockChainInMemAddNodeOrphan(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	block := NewSimpleBlock(BytesToByte64([]byte("some random parent hash")), chain.genesis.Hash(), myNode)
@@ -74,6 +98,7 @@ func TestBlockChainInMemAddNodeOrphan(t *testing.T) {
 
 
 func TestBlockChainInMemAddNodeDuplicate(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	// add a block to chain
@@ -87,6 +112,7 @@ func TestBlockChainInMemAddNodeDuplicate(t *testing.T) {
 }
 
 func TestBlockChainInMemAddNodeForwardLink(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	// add an ancestor block to chain
@@ -124,6 +150,7 @@ func makeBlocks(len int, parent *Byte64, genesis *Byte64, miner NodeInfo) []*Sim
 }
 
 func TestBlockChainInMemLongestChain(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	// add an ancestor block to chain
@@ -153,8 +180,60 @@ func TestBlockChainInMemLongestChain(t *testing.T) {
 	}
 }
 
+func TestBlockChainInMemRebalance(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
+	chain := NewBlockChainInMem()
+	myNode := NewSimpleNodeInfo("test node")
+	// add an ancestor block to chain
+	ancestor := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
+	ancestor.ComputeHash()
+	chain.AddBlockNode(ancestor)
+	// add 1st child to ancestor
+	child1 := NewSimpleBlock(ancestor.Hash(), chain.genesis.Hash(), myNode)
+	child1.ComputeHash()
+	chain.AddBlockNode(child1)
+	// add 2nd child to ancestor
+	child2 := NewSimpleBlock(ancestor.Hash(), chain.genesis.Hash(), myNode)
+	child2.ComputeHash()
+	chain.AddBlockNode(child2)
+	// verify that blockchain points to 1st child as tip
+	if chain.Tip().Hash() != child1.Hash() {
+		t.Errorf("chain tip incorrect: Expected '%d' Found '%d'", child1, chain.Tip())
+	}
+	bn,_ := chain.BlockNode(child1.Hash())
+	if !bn.IsMainList() {
+		t.Errorf("chain tip incorrect: Expected child1 in mainlist '%d' Found '%d'", true, bn.IsMainList())
+	}
+	bn,_ = chain.BlockNode(child2.Hash())
+	if bn.IsMainList() {
+		t.Errorf("chain tip incorrect: Expected child2 in mainlist '%d' Found '%d'", false, bn.IsMainList())
+	}
+	
+	// now add new block to child2 (current non main list)
+	child3 := NewSimpleBlock(child2.Hash(), chain.genesis.Hash(), myNode)
+	child3.ComputeHash()
+	chain.AddBlockNode(child3)
+	// verify that blockchain points to 3rd child as tip
+	if chain.Tip().Hash() != child3.Hash() {
+		t.Errorf("chain tip incorrect: Expected '%d' Found '%d'", child3, chain.Tip())
+	}
+	// confirm that main list flags have been rebalanced
+	bn,_ = chain.BlockNode(child1.Hash())
+	if bn.IsMainList() {
+		t.Errorf("chain tip incorrect: Expected child1 in mainlist '%d' Found '%d'", false, bn.IsMainList())
+	}
+	bn,_ = chain.BlockNode(child2.Hash())
+	if !bn.IsMainList() {
+		t.Errorf("chain tip incorrect: Expected child2 in mainlist '%d' Found '%d'", true, bn.IsMainList())
+	}
+	bn,_ = chain.BlockNode(child3.Hash())
+	if !bn.IsMainList() {
+		t.Errorf("chain tip incorrect: Expected child3 in mainlist '%d' Found '%d'", true, bn.IsMainList())
+	}
+}
 
 func TestBlockChainInMemWalkThroughChain(t *testing.T) {
+	log.SetLogLevel(log.ERROR)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	// add an ancestor block to chain

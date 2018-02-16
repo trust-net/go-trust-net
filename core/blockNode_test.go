@@ -2,6 +2,7 @@ package core
 
 import (
     "testing"
+	"github.com/trust-net/go-trust-net/common"
 )
 
 var child1 = BytesToByte64([]byte("child1"))
@@ -23,6 +24,22 @@ func TestNewBlockNode(t *testing.T) {
 	if len(node.Children()) != 0 {
 		t.Errorf("Childrens: Expected: %d, Actual: %d", 0, len(node.Children()))
 	}
+	if node.IsMainList() {
+		t.Errorf("Is main list: Expected: %d, Actual: %d", false, node.IsMainList())
+	}
+}
+
+func TestSetIsMain(t *testing.T) {
+	myNode := NewSimpleNodeInfo("test node")
+	block := NewSimpleBlock(BytesToByte64([]byte("previous")), BytesToByte64([]byte("genesis")), myNode)
+	node := NewBlockNode(block, 11)
+	if node.IsMainList() {
+		t.Errorf("Is main list: Expected: %d, Actual: %d", false, node.IsMainList())
+	}
+	node.SetMainList(true)
+	if !node.IsMainList() {
+		t.Errorf("Is main list: Expected: %d, Actual: %d", false, node.IsMainList())
+	}	
 }
 
 func TestAddChild(t *testing.T) {
@@ -39,5 +56,26 @@ func TestAddChild(t *testing.T) {
 	}
 	if node.Children()[1] != child2 {
 		t.Errorf("Child 2: Expected: %d, Actual: %d", child2, node.Children()[1])
+	}
+}
+
+type testError struct {}
+
+func (e *testError) Error() string {
+	return ""
+}
+
+func TestLock(t *testing.T) {
+	myNode := NewSimpleNodeInfo("test node")
+	block := NewSimpleBlock(BytesToByte64([]byte("previous")), BytesToByte64([]byte("genesis")), myNode)
+	node := NewBlockNode(block, 11)
+	node.Lock()
+	defer node.Unlock()
+	if err := common.RunTimeBound(2, func() error {
+			node.Lock()
+			defer node.Unlock()
+			return nil
+		}, &testError{}); err == nil {
+		t.Errorf("did not lock")
 	}
 }
