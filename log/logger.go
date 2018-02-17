@@ -12,6 +12,7 @@ const (
 	DEBUG = uint(1)
 	INFO	 = uint(2)
 	ERROR = uint(3)
+	NONE = uint(1<<10)
 )
 
 const (

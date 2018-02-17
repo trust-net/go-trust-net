@@ -3,11 +3,13 @@ package core
 import (
     "testing"
     "time"
+    "sync"
+    "math/rand"
 	"github.com/trust-net/go-trust-net/log"
 )
 
 func TestNewBlockChainInMem(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	now := time.Duration(time.Now().UnixNano())
 	chain := NewBlockChainInMem()
 	if chain.depth != 0 {
@@ -32,7 +34,7 @@ func TestNewBlockChainInMem(t *testing.T) {
 }
 
 func TestBlockChainInMemAddNode(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
@@ -50,7 +52,7 @@ func TestBlockChainInMemAddNode(t *testing.T) {
 }
 
 func TestBlockChainInMemAddNodeDepthUpdate(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
@@ -63,7 +65,7 @@ func TestBlockChainInMemAddNodeDepthUpdate(t *testing.T) {
 
 
 func TestBlockChainInMemAddNodeTdUpdate(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
@@ -75,7 +77,7 @@ func TestBlockChainInMemAddNodeTdUpdate(t *testing.T) {
 }
 
 func TestBlockChainInMemAddNodeUncomputed(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
@@ -85,7 +87,7 @@ func TestBlockChainInMemAddNodeUncomputed(t *testing.T) {
 }
 
 func TestBlockChainInMemAddNodeNil(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 //	myNode := NewSimpleNodeInfo("test node")
 //	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
@@ -95,7 +97,7 @@ func TestBlockChainInMemAddNodeNil(t *testing.T) {
 }
 
 func TestBlockChainInMemAddNodeOrphan(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	block := NewSimpleBlock(BytesToByte64([]byte("some random parent hash")), chain.genesis.Hash(), myNode)
@@ -107,7 +109,7 @@ func TestBlockChainInMemAddNodeOrphan(t *testing.T) {
 
 
 func TestBlockChainInMemAddNodeDuplicate(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	// add a block to chain
@@ -121,7 +123,7 @@ func TestBlockChainInMemAddNodeDuplicate(t *testing.T) {
 }
 
 func TestBlockChainInMemAddNodeForwardLink(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	// add an ancestor block to chain
@@ -159,7 +161,7 @@ func makeBlocks(len int, parent *Byte64, genesis *Byte64, miner NodeInfo) []*Sim
 }
 
 func TestBlockChainInMemLongestChain(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	// add an ancestor block to chain
@@ -190,7 +192,7 @@ func TestBlockChainInMemLongestChain(t *testing.T) {
 }
 
 func TestBlockChainInMemRebalance(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	// add an ancestor block to chain
@@ -242,7 +244,7 @@ func TestBlockChainInMemRebalance(t *testing.T) {
 }
 
 func TestBlockChainInMemWalkThroughMainListOnly(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	// add an ancestor block to chain
@@ -278,7 +280,7 @@ func TestBlockChainInMemWalkThroughMainListOnly(t *testing.T) {
 }
 
 func TestBlockChainInMemWalkThroughOverMax(t *testing.T) {
-	log.SetLogLevel(log.ERROR)
+	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem()
 	myNode := NewSimpleNodeInfo("test node")
 	// now add a chain with more than max node
@@ -292,6 +294,67 @@ func TestBlockChainInMemWalkThroughOverMax(t *testing.T) {
 	syncBlocks := chain.Blocks(chain.genesis.Hash(), maxBlocks+10)
 	if len(syncBlocks) > maxBlocks {
 		t.Errorf("chain traversal did not return correct number of blocks: Expected '%d' Found '%d'", maxBlocks, len(syncBlocks))
+	}
+}
+
+
+func TestBlockChainInMemConsensus(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	// simulate 3 different concurrent nodes updating their individual blockchain instances
+	chain1, chain2, chain3 := NewBlockChainInMem(), NewBlockChainInMem(), NewBlockChainInMem()
+	*chain2.genesis.hash = *chain1.genesis.hash
+	chain2.nodes[*chain1.genesis.Hash()] = chain2.genesis
+	*chain3.genesis.hash = *chain1.genesis.hash 
+	chain3.nodes[*chain1.genesis.Hash()] = chain3.genesis
+	node1, node2, node3 := NewSimpleNodeInfo("test node 1"), NewSimpleNodeInfo("test node 2"), NewSimpleNodeInfo("test node 3")
+	// define a node function that adds blocks to chain
+	lock := sync.RWMutex{}
+	counter := 0
+	nodeFunc := func(myChain *BlockChainInMem, myNode *SimpleNodeInfo) {
+		// simulate mining delay
+		time.Sleep(time.Millisecond * time.Duration(rand.Intn(200)))
+		// get lock for exclusive access
+		lock.RLock()
+		defer lock.RUnlock()
+		// create a new node using the tip of this node's blockchain
+		block := NewSimpleBlock(myChain.Tip().Hash(), myChain.genesis.Hash(), myNode)
+		block.ComputeHash()
+		// simulate broadcast to all nodes
+		chain1.AddBlockNode(block)
+		chain2.AddBlockNode(block)
+		chain3.AddBlockNode(block)
+		counter++
+	}
+	
+	// run the node functions on 3 nodes concurrently
+	for i := 0; i < 10; i++ {
+		go nodeFunc(chain1, node1)
+		go nodeFunc(chain2, node2)
+		go nodeFunc(chain3, node3)
+	}
+	// wait for all 3 nodes to finish
+	for counter < 30 {}
+
+	// validate that all 3 chains have same tip node hash
+	if chain1.Tip().Hash() != chain2.Tip().Hash() {
+		t.Errorf("tip of chain1 and chain2 are different")
+	}
+	if chain2.Tip().Hash() != chain3.Tip().Hash() {
+		t.Errorf("tip of chain2 and chain3 are different")
+	}
+	// validate that all 3 chains have same depth of main/longest chain
+	if chain1.Depth() != chain2.Depth() {
+		t.Errorf("Depth of chain1 '%d' not same as chain2 '%d'", chain1.Depth(), chain2.Depth())
+	}
+	if chain2.Depth() != chain3.Depth() {
+		t.Errorf("Depth of chain2 '%d' not same as chain3 '%d'", chain2.Depth(), chain3.Depth())
+	}
+	// validate that all 3 chains have same TD
+	if chain1.TD() != chain2.TD() {
+		t.Errorf("TD of chain1 '%d' not same as chain2 '%d'", chain1.TD(), chain2.TD())
+	}
+	if chain2.TD() != chain3.TD() {
+		t.Errorf("TD of chain2 '%d' not same as chain3 '%d'", chain2.TD(), chain3.TD())
 	}
 }
 
