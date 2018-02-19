@@ -28,6 +28,41 @@ func TestBytesToByte32(t *testing.T) {
 	}
 }
 
+func TestUint64ToByte8(t *testing.T) {
+	expected := uint64(0x01020304)
+	actual := Uint64ToByte8(expected)
+	
+	// we should get network byte order (bigendian)
+	for i, b := range([]byte{0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04}) {
+		if b != actual[i] {
+			t.Errorf("Expected: %d, Actual: %d", b, actual[i])
+		}
+	}
+}
+
+func TestByte8ToUint64(t *testing.T) {
+	expected := uint64(0x01)
+	source := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}
+	actual := BytesToByte8(source)
+	
+	// we should get network byte order (bigendian)
+	if actual.Uint64() != expected {
+		t.Errorf("Expected: %d, Actual: %d", expected, actual.Uint64())
+	}
+}
+
+func TestBytesToByte8(t *testing.T) {
+	expected := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+	actual := BytesToByte8(expected)
+
+	// we should get exact match
+	for i, b := range(expected) {
+		if b != actual[i] {
+			t.Errorf("Expected: %d, Actual: %d", expected, actual)
+		}
+	}
+}
+
 func TestBytesToByte16WithExact16Bytes(t *testing.T) {
 	expected, _ := uuid.NewV1()
 	actual := BytesToByte16(expected.Bytes())

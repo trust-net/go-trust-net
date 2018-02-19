@@ -2,7 +2,6 @@ package core
 
 import (
 	"time"
-	"fmt"
 	"crypto/sha512"
 )
 
@@ -24,48 +23,48 @@ type NodeInfo interface{
 
 // interface for block specification
 type Block interface {
-	Previous() Header
-	Miner() NodeInfo
-	Nonce() Header
-	TD() time.Duration
-	TXs() []Transaction
+	ParentHash() *Byte64
+	Miner() *Byte64
+	Nonce() *Byte8
+	Timestamp() *Byte8
+	OpCode() *Byte8
 	Genesis() Header
 	Hash() *Byte64
 }
 
 // a simple blockchain spec implementation
 type SimpleBlock struct {
-	previous Header
-	miner NodeInfo
+	parentHash *Byte64
+	miner *Byte64
 	hash *Byte64
-	nonce Header
 	genesis Header
-	txs	[]Transaction
-	td	  time.Duration
+	opCode	*Byte8
+	timestamp *Byte8
+	nonce *Byte8
 }
 
-func (b *SimpleBlock) Previous() Header {
-	return b.previous
+func (b *SimpleBlock) ParentHash() *Byte64 {
+	return b.parentHash
 }
 
-func (b *SimpleBlock) Miner() NodeInfo {
+func (b *SimpleBlock) Miner() *Byte64 {
 	return b.miner
 }
 
-func (b *SimpleBlock) Nonce() Header {
+func (b *SimpleBlock) Nonce() *Byte8 {
 	return b.nonce
 }
 
-func (b *SimpleBlock) TD() time.Duration {
-	return b.td
+func (b *SimpleBlock) Timestamp() *Byte8 {
+	return b.timestamp
 }
 
 func (b *SimpleBlock) Genesis() Header {
 	return b.genesis
 }
 
-func (b *SimpleBlock) TXs() []Transaction {
-	return b.txs
+func (b *SimpleBlock) OpCode() *Byte8 {
+	return b.opCode
 }
 
 func (b *SimpleBlock) Hash() *Byte64 {
@@ -86,12 +85,14 @@ func NewSimpleHeader(header *Byte64) *SimpleHeader {
 	}
 }
 
+// block hash = SHA512(parent_hash + author_node + timestamp + opcode + nonce)
 func (b *SimpleBlock) ComputeHash() {
 	data := make([]byte,0)
-	data = append(data, b.previous.Bytes().Bytes()...)
-	data = append(data, []byte(b.miner.Id())...)
-	data = append(data, b.genesis.Bytes().Bytes()...)
-	data = append(data, []byte(fmt.Sprintf("%d",b.td))...)
+	data = append(data, b.parentHash.Bytes()...)
+	data = append(data, b.miner.Bytes()...)
+	data = append(data, b.timestamp.Bytes()...)
+	data = append(data, b.opCode.Bytes()...)
+	data = append(data, b.nonce.Bytes()...)
 	hash := sha512.Sum512(data)
 	b.hash = BytesToByte64(hash[:])
 }
@@ -112,11 +113,12 @@ func NewSimpleNodeInfo(id string) *SimpleNodeInfo {
 
 func NewSimpleBlock(previous *Byte64, genesis *Byte64, miner NodeInfo) *SimpleBlock {
 	return &SimpleBlock{
-		previous: NewSimpleHeader(previous),
-		miner: miner,
+		parentHash: previous,
+		miner: BytesToByte64([]byte(miner.Id())),
+		nonce: Uint64ToByte8(0x0),
 		genesis: NewSimpleHeader(genesis),
-		td: time.Duration(time.Now().UnixNano()),
-		txs: make([]Transaction,0),
+		timestamp: Uint64ToByte8(uint64(time.Now().UnixNano())),
+		opCode: Uint64ToByte8(0),
 		hash: nil,
 	}
 }

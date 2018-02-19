@@ -17,7 +17,7 @@ type BlockNode struct {
 func NewBlockNode(block Block, depth uint64) *BlockNode {
 	return &BlockNode{
 		hash: block.Hash(),
-		parent: block.Previous().Bytes(),
+		parent: block.ParentHash(),
 		block: block,
 		depth: depth,
 		isMainList: false,

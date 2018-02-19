@@ -15,8 +15,8 @@ func TestNewBlockNode(t *testing.T) {
 	if node.Hash() != block.Hash() {
 		t.Errorf("Hash: Expected: %d, Actual: %d", block.Hash(), node.Hash())
 	}
-	if node.Parent() != block.Previous().Bytes() {
-		t.Errorf("Parent: Expected: %d, Actual: %d", block.Previous().Bytes(), node.Parent())
+	if node.Parent() != block.ParentHash() {
+		t.Errorf("Parent: Expected: %d, Actual: %d", block.ParentHash(), node.Parent())
 	}
 	if node.Depth() != 11 {
 		t.Errorf("Depth: Expected: %d, Actual: %d", 11, node.Depth())

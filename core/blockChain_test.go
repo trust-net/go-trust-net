@@ -10,7 +10,7 @@ import (
 
 func TestNewBlockChainInMem(t *testing.T) {
 	log.SetLogLevel(log.NONE)
-	now := time.Duration(time.Now().UnixNano())
+	now := uint64(time.Now().UnixNano())
 	chain := NewBlockChainInMem()
 	if chain.depth != 0 {
 		t.Errorf("chain depth incorrect: Expected '%d' Found '%d'", 0, chain.depth)
@@ -18,8 +18,8 @@ func TestNewBlockChainInMem(t *testing.T) {
 	if chain.genesis.Depth() != 0 {
 		t.Errorf("chain depth incorrect: Expected '%d' Found '%d'", 0, chain.depth)
 	}
-	if now < (chain.td - time.Second * 1) {
-		t.Errorf("chain TD incorrect: Expected '%d' Found '%d'", now, chain.TD)
+	if now < (chain.td.Uint64() - uint64(time.Second * 1)) {
+		t.Errorf("chain TD incorrect: Expected '%d' Found '%d'", now, chain.TD())
 	}
 	bn,_ := chain.BlockNode(chain.genesis.Hash())
 	if !bn.IsMainList() {
@@ -71,8 +71,8 @@ func TestBlockChainInMemAddNodeTdUpdate(t *testing.T) {
 	block := NewSimpleBlock(chain.genesis.Hash(), chain.genesis.Hash(), myNode)
 	block.ComputeHash()
 	chain.AddBlockNode(block)
-	if chain.TD() != block.TD() {
-		t.Errorf("Failed to update TD of the chain: Expected %d, Actual %d", block.TD(), chain.TD())
+	if *chain.TD() != *block.Timestamp() {
+		t.Errorf("Failed to update TD of the chain: Expected %d, Actual %d", block.Timestamp(), chain.TD())
 	}
 }
 
@@ -186,8 +186,8 @@ func TestBlockChainInMemLongestChain(t *testing.T) {
 	if chain.Depth() != 7 {
 		t.Errorf("chain depth incorrect: Expected '%d' Found '%d'", 7, chain.Depth())
 	}
-	if chain.TD() != chain1[5].TD() {
-		t.Errorf("chain TD incorrect: Expected '%d' Found '%d'", chain1[5].TD(), chain.TD())
+	if *chain.TD() != *chain1[5].Timestamp() {
+		t.Errorf("chain TD incorrect: Expected '%d' Found '%d'", chain1[5].Timestamp(), chain.TD())
 	}
 }
 
@@ -350,10 +350,10 @@ func TestBlockChainInMemConsensus(t *testing.T) {
 		t.Errorf("Depth of chain2 '%d' not same as chain3 '%d'", chain2.Depth(), chain3.Depth())
 	}
 	// validate that all 3 chains have same TD
-	if chain1.TD() != chain2.TD() {
-		t.Errorf("TD of chain1 '%d' not same as chain2 '%d'", chain1.TD(), chain2.TD())
+	if *chain1.TD() != *chain2.TD() {
+		t.Errorf("TD of chain1 '%d' not same as chain2 '%d'", *chain1.TD(), *chain2.TD())
 	}
-	if chain2.TD() != chain3.TD() {
+	if *chain2.TD() != *chain3.TD() {
 		t.Errorf("TD of chain2 '%d' not same as chain3 '%d'", chain2.TD(), chain3.TD())
 	}
 }

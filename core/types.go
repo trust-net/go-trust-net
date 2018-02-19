@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/binary"
 )
 
 const (
@@ -16,6 +17,15 @@ type ByteArray interface {
 type Byte32 	[HashLength]byte
 type Byte16 	[UUIDLength]byte
 type Byte64	[EnodeLength]byte
+type Byte8 	[8]byte
+
+func (bytes *Byte8) Bytes() []byte {
+	return bytes[:]
+}
+
+func (bytes *Byte8) Uint64() uint64 {
+	return binary.BigEndian.Uint64(bytes[:])
+}
 
 func (bytes *Byte32) Bytes() []byte {
 	return bytes[:]
@@ -37,6 +47,18 @@ func copyBytes(source []byte, dest []byte, size int) {
 	for ;i > 0; i-- {
 		dest[i-1] = source[i-1]
 	}
+}
+
+func BytesToByte8(source []byte) *Byte8 {
+	var byte8 Byte8
+	copyBytes(source, byte8.Bytes(), 8)
+	return &byte8
+}
+
+func Uint64ToByte8(source uint64) *Byte8 {
+	var byte8 Byte8
+	binary.BigEndian.PutUint64(byte8[:], source)
+	return &byte8
 }
 
 func BytesToByte16(source []byte) *Byte16 {

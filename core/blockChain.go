@@ -1,7 +1,6 @@
 package core
 
 import (
-	"time"
 	"sync"
 	"github.com/trust-net/go-trust-net/log"
 
@@ -18,20 +17,25 @@ const (
 type BlockChainInMem struct {
 	genesis *BlockNode
 	leaves []*BlockNode // do we need this?
-	td	time.Duration
+	td	*Byte8
 	depth uint64
 	nodes map[Byte64]*BlockNode
 	lock sync.RWMutex
 	logger log.Logger
 }
 
+// we should pass genesis block as parameter, instead of auto generating here
+// since genesis block needs to be the "same" on all nodes/instances of this blockchain
+//
+// this way, an exactly same genesis block can be computed deterministically from a config
+// on all instances of this blockchain
 func NewBlockChainInMem() *BlockChainInMem {
 	genesis := NewSimpleBlock(BytesToByte64(nil), BytesToByte64(nil), NewSimpleNodeInfo(""))
 	genesis.ComputeHash()
 	chain := &BlockChainInMem{
 		genesis: NewBlockNode(genesis, 0),
 		depth: 0,
-		td: genesis.TD(),
+		td: BytesToByte8(genesis.Timestamp().Bytes()),
 		leaves: make([]*BlockNode, 1), // do we need this?
 		nodes: make(map[Byte64]*BlockNode),
 	}
@@ -47,7 +51,7 @@ func (chain *BlockChainInMem) Depth() uint64 {
 	return chain.depth
 }
 
-func (chain *BlockChainInMem) TD() time.Duration {
+func (chain *BlockChainInMem) TD() *Byte8 {
 	return chain.td
 }
 
@@ -78,7 +82,7 @@ func (chain *BlockChainInMem) AddBlockNode(block Block) error {
 		chain.logger.Error("attempt to add duplicate block!!!")
 		return NewCoreError("duplicate block")
 	}
-	if parent, ok := chain.nodes[*block.Previous().Bytes()]; !ok {
+	if parent, ok := chain.nodes[*block.ParentHash()]; !ok {
 		chain.logger.Error("attempt to add an orphan block!!!")
 		return NewCoreError("orphan block")
 	} else {
@@ -93,7 +97,7 @@ func (chain *BlockChainInMem) AddBlockNode(block Block) error {
 		if chain.Depth() < child.Depth() {
 			chain.logger.Debug("rebalancing the block chain after new block addition")
 			// move depth and tip of blockchain
-			chain.td = block.TD()
+			*chain.td = *block.Timestamp()
 			chain.depth = child.Depth()
 			chain.leaves[0] = child
 			// walk up the ancestor list setting them up as main list nodes

@@ -3,7 +3,6 @@ package core
 import (
     "testing"
     "time"
-    "fmt"
     "crypto/sha512"
 )
 
@@ -13,20 +12,20 @@ func TestNewSimpleBlock(t *testing.T) {
 	myNode := NewSimpleNodeInfo("test node")
 	now := time.Duration(time.Now().UnixNano())
 	block := NewSimpleBlock(previous, genesis, myNode)
-	if block.Previous().Bytes() != previous {
-		t.Errorf("Block header does not match: Expected '%s', Found '%s'", previous, block.Previous())
+	if block.ParentHash() != previous {
+		t.Errorf("Block header does not match: Expected '%s', Found '%s'", previous, block.ParentHash())
 	}
 	if block.Genesis().Bytes() != genesis {
 		t.Errorf("Block header does not match: Expected '%s', Found '%s'", genesis, block.Genesis())
 	}
-	if block.Miner().Id() != "test node" {
-		t.Errorf("Block minder does not match: Expected '%s', Found '%s'", myNode.Id(), block.Miner().Id())
+	if *block.Miner() != *BytesToByte64([]byte(myNode.Id())) {
+		t.Errorf("Block miner does not match: Expected '%s', Found '%s'", BytesToByte64([]byte(myNode.Id())), block.Miner())
 	}
-	if block.Nonce() != nil {
-		t.Errorf("Block nonce not empty: Found '%s'", block.Nonce())
+	if block.Nonce().Uint64() != uint64(0x0) {
+		t.Errorf("Block nonce not initialized: Found '%s'", block.Nonce())
 	}
-	if len(block.TXs()) != 0 {
-		t.Errorf("Block transaction list not empty: Found '%d'", len(block.TXs()))
+	if block.OpCode().Uint64() != 0 {
+		t.Errorf("Block's op code not empty: Found '%d'", block.OpCode())
 	}
 	if block.Hash() != nil {
 		t.Errorf("Block transaction hash not empty: Found '%s'", block.Hash())
@@ -34,8 +33,8 @@ func TestNewSimpleBlock(t *testing.T) {
 //	if block.Since() != now {
 //		t.Errorf("Block genesis time incorrect: Expected '%d' Found '%d'", now, block.Since())
 //	}
-	if block.TD() > (time.Second + now) {
-		t.Errorf("Block total difficulty time incorrect: Found '%d'", block.TD())
+	if block.Timestamp().Uint64() > uint64(time.Second + now) {
+		t.Errorf("Block total difficulty time incorrect: Found '%d'", block.Timestamp())
 	}
 }
 
@@ -46,11 +45,13 @@ func TestSimpleBlockHash(t *testing.T) {
 	if len(block.Hash()) != 64 {
 		t.Errorf("Block hash not 64 bytes: Found '%d'", block.Hash())
 	}
+	// block hash = SHA512(parent_hash + author_node + timestamp + opcode + nonce)
 	data := make([]byte,0)
 	data = append(data, previous.Bytes()..., )
-	data = append(data, []byte(block.miner.Id())...)
-	data = append(data, genesis.Bytes()...)
-	data = append(data, []byte(fmt.Sprintf("%d",block.td))...)
+	data = append(data, block.miner.Bytes()...)
+	data = append(data, block.timestamp.Bytes()...)
+	data = append(data, block.opCode.Bytes()...)
+	data = append(data, block.nonce.Bytes()...)
 	hash := sha512.Sum512(data)
 	if *block.Hash() != *BytesToByte64(hash[:]) {
 		t.Errorf("Block hash incorrect: Expected '%d' Found '%d'", BytesToByte64(hash[:]), block.Hash())
