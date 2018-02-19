@@ -28,6 +28,8 @@ var ProtocolVersion = uint(poc1)
 
 var handshakeMsg = protocol.HandshakeMsg {
 	NetworkId: *core.BytesToByte16([]byte{1,2,3,4}),
+	ShardId: *core.BytesToByte16(nil),
+	TotalWeight: *core.Uint64ToByte8(0),
 }
 
 // a "countr" protocol manager implementation

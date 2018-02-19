@@ -23,6 +23,8 @@ var ProtocolVersion = uint(poc1)
 
 var defaultHandshake = protocol.HandshakeMsg {
 	NetworkId: *core.BytesToByte16([]byte{1,2,3,4}),
+	ShardId: *core.BytesToByte16(nil),
+	TotalWeight: *core.Uint64ToByte8(0),
 }
 
 // signature for callback function when a page is recieved
