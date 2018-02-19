@@ -10,8 +10,8 @@ var previous = BytesToByte64([]byte("previous"))
 var genesis = BytesToByte64([]byte("genesis"))
 func TestNewSimpleBlock(t *testing.T) {
 	myNode := NewSimpleNodeInfo("test node")
-	now := time.Duration(time.Now().UnixNano())
-	block := NewSimpleBlock(previous, myNode)
+	now := uint64(time.Now().UnixNano())
+	block := NewSimpleBlock(previous, now, myNode)
 	if block.ParentHash() != previous {
 		t.Errorf("Block header does not match: Expected '%s', Found '%s'", previous, block.ParentHash())
 	}
@@ -27,17 +27,14 @@ func TestNewSimpleBlock(t *testing.T) {
 	if block.Hash() != nil {
 		t.Errorf("Block transaction hash not empty: Found '%s'", block.Hash())
 	}
-//	if block.Since() != now {
-//		t.Errorf("Block genesis time incorrect: Expected '%d' Found '%d'", now, block.Since())
-//	}
-	if block.Timestamp().Uint64() > uint64(time.Second + now) {
-		t.Errorf("Block total difficulty time incorrect: Found '%d'", block.Timestamp())
+	if block.Timestamp().Uint64() != now {
+		t.Errorf("Block time stamp incorrect: Expected '%d', Found '%d'", now, block.Timestamp().Uint64())
 	}
 }
 
 func TestSimpleBlockHash(t *testing.T) {
 	myNode := NewSimpleNodeInfo("test node")
-	block := NewSimpleBlock(previous, myNode)
+	block := NewSimpleBlock(previous, 0, myNode)
 	block.ComputeHash()
 	if len(block.Hash()) != 64 {
 		t.Errorf("Block hash not 64 bytes: Found '%d'", block.Hash())

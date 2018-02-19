@@ -41,7 +41,6 @@ func NewPagerProtocolManager(callback PageHandler) *PagerProtocolManager {
 		callback: callback,
 	}
 	mgr.SetDb(db.NewPeerSetDbInMemory())
-	mgr.SetHandshakeMsg(&defaultHandshake)
 	mgr.logger = log.NewLogger(mgr)
 	mgr.logger.Debug("Created new instance of pager protocol manager")
 	return &mgr
@@ -88,6 +87,7 @@ func (mgr *PagerProtocolManager) Protocol() p2p.Protocol {
 			Version:		ProtocolVersion,
 			Length:		ProtocolMsgCount,
 			Run:		func(peer *p2p.Peer, ws p2p.MsgReadWriter) error {
+				mgr.logger.Debug("Connecting with '%s' [%s]", peer.Name(), peer.RemoteAddr())
 
 				if mgr.PeerCount() >= maxPeers {
 					mgr.logger.Info("Max peer capacity, cannot accept '%s'", peer.Name())
@@ -95,8 +95,8 @@ func (mgr *PagerProtocolManager) Protocol() p2p.Protocol {
 				}
 
 				// initiate handshake with the new peer
-				if err := mgr.Handshake(peer, ws); err != nil {
-					mgr.logger.Error("%s", err)
+				if err := mgr.Handshake(peer, &defaultHandshake, ws); err != nil {
+					mgr.logger.Error("%s: %s", peer.Name(), err)
 					return err
 				} else {
 					defer func() {

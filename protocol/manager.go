@@ -15,7 +15,7 @@ type ProtocolManager interface {
 	AddPeer(node *discover.Node) error
 
 	// perform protocol specific handshake with newly connected peer
-	Handshake(peer *p2p.Peer, ws p2p.MsgReadWriter) error
+	Handshake(peer *p2p.Peer, status *HandshakeMsg, ws p2p.MsgReadWriter) error
 	
 	// get reference to protocol manager's DB
 	Db() db.PeerSetDb
@@ -35,7 +35,6 @@ const (
 type ManagerBase struct {
 	db db.PeerSetDb
 	peerCount	int
-	handshakeMsg *HandshakeMsg
 }
 
 
@@ -55,10 +54,6 @@ func (mgr *ManagerBase) SetDb(db db.PeerSetDb) {
 	mgr.db = db
 }
 
-func (mgr *ManagerBase) SetHandshakeMsg(handshakeMsg *HandshakeMsg) {
-	mgr.handshakeMsg = handshakeMsg
-}
-
 func (mgr *ManagerBase) AddPeer(node *discover.Node) error {
 	// we don't have a p2p server for individual protocol manager, and hence cannot add a node
 	// this will need to be done from outside, at the application level
@@ -66,9 +61,9 @@ func (mgr *ManagerBase) AddPeer(node *discover.Node) error {
 }
 
 // perform sub protocol handshake
-func (mgr *ManagerBase) Handshake(peer *p2p.Peer, ws p2p.MsgReadWriter) error {
+func (mgr *ManagerBase) Handshake(peer *p2p.Peer, status *HandshakeMsg, ws p2p.MsgReadWriter) error {
 	// send our status to the peer
-	if err := p2p.Send(ws, Handshake, *mgr.handshakeMsg); err != nil {
+	if err := p2p.Send(ws, Handshake, *status); err != nil {
 		return NewProtocolError(ErrorHandshakeFailed, err.Error())
 	}
 
@@ -94,9 +89,9 @@ func (mgr *ManagerBase) Handshake(peer *p2p.Peer, ws p2p.MsgReadWriter) error {
 	
 	// validate handshake message
 	switch {
-		case handshake.NetworkId != mgr.handshakeMsg.NetworkId:
+		case handshake.NetworkId != status.NetworkId:
 			return NewProtocolError(ErrorHandshakeFailed, "network ID does not match")
-		case handshake.ShardId != mgr.handshakeMsg.ShardId:
+		case handshake.ShardId != status.ShardId:
 			return NewProtocolError(ErrorHandshakeFailed, "shard ID does not match")
 	}
 

@@ -5,7 +5,7 @@
 FROM p2p-pager
 
 # uncomment below to cleanup older image (e.g. when directory layout changes)
-#RUN rm -rf /go/src/github.com/trust-net/go-trust-net
+RUN rm -rf /go/src/github.com/trust-net/go-trust-net
 
 # copy current source codebase
 ADD . /go/src/github.com/trust-net/go-trust-net
@@ -15,6 +15,7 @@ ADD . /go/src/github.com/trust-net/go-trust-net
 #RUN go get github.com/satori/go.uuid
 
 # build and install app
+RUN go clean -i -x
 RUN go install github.com/trust-net/go-trust-net/app
 
 ENTRYPOINT /go/bin/app

@@ -5,17 +5,6 @@ import (
 	"crypto/sha512"
 )
 
-// interface to implement transactions
-type Transaction interface {
-	// execute using input data, and produce and output or error
-	Execute(input interface{}) (interface{}, error)
-}
-
-// interface to implement block headers
-type Header interface {
-	Bytes() *Byte64
-}
-
 // interface for node information 
 type NodeInfo interface{
 	Id()	 string
@@ -69,16 +58,6 @@ type SimpleHeader struct {
 	header *Byte64
 }
 
-func (h *SimpleHeader) Bytes() *Byte64 {
-	return h.header
-}
-
-func NewSimpleHeader(header *Byte64) *SimpleHeader {
-	return &SimpleHeader {
-		header: header,
-	}
-}
-
 // block hash = SHA512(parent_hash + author_node + timestamp + opcode + nonce)
 func (b *SimpleBlock) ComputeHash() {
 	data := make([]byte,0)
@@ -105,12 +84,15 @@ func NewSimpleNodeInfo(id string) *SimpleNodeInfo {
 	}
 }
 
-func NewSimpleBlock(previous *Byte64, miner NodeInfo) *SimpleBlock {
+func NewSimpleBlock(previous *Byte64, ts uint64, miner NodeInfo) *SimpleBlock {
+	if ts == 0 {
+		ts = uint64(time.Now().UnixNano())
+	}
 	return &SimpleBlock{
 		parentHash: previous,
 		miner: BytesToByte64([]byte(miner.Id())),
 		nonce: Uint64ToByte8(0x0),
-		timestamp: Uint64ToByte8(uint64(time.Now().UnixNano())),
+		timestamp: Uint64ToByte8(ts),
 		opCode: Uint64ToByte8(0),
 		hash: nil,
 	}

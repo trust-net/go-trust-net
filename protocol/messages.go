@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"math/big"
 	"github.com/trust-net/go-trust-net/core"
 )
 
@@ -14,9 +13,7 @@ const (
 
 // the very first message exchanged between two byoi peers upon connection establishment
 type HandshakeMsg struct {
-	NetworkId	core.Byte16
-	ShardId		core.Byte16
-	TD			*big.Int
-	CurrentBlock    core.Byte32
-	GenesisBlock    core.Byte32
+       NetworkId core.Byte16 	`json:"network_id"       gencodec:"required"`
+       ShardId core.Byte16 		`json:"shard_id"       	gencodec:"required"`
+       TotalWeight core.Byte8	`json:"total_weight"  	gencodec:"required"`
 }
