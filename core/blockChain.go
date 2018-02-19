@@ -29,9 +29,7 @@ type BlockChainInMem struct {
 //
 // this way, an exactly same genesis block can be computed deterministically from a config
 // on all instances of this blockchain
-func NewBlockChainInMem() *BlockChainInMem {
-	genesis := NewSimpleBlock(BytesToByte64(nil), BytesToByte64(nil), NewSimpleNodeInfo(""))
-	genesis.ComputeHash()
+func NewBlockChainInMem(genesis Block) *BlockChainInMem {
 	chain := &BlockChainInMem{
 		genesis: NewBlockNode(genesis, 0),
 		depth: 0,

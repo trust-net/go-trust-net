@@ -28,7 +28,6 @@ type Block interface {
 	Nonce() *Byte8
 	Timestamp() *Byte8
 	OpCode() *Byte8
-	Genesis() Header
 	Hash() *Byte64
 }
 
@@ -37,7 +36,6 @@ type SimpleBlock struct {
 	parentHash *Byte64
 	miner *Byte64
 	hash *Byte64
-	genesis Header
 	opCode	*Byte8
 	timestamp *Byte8
 	nonce *Byte8
@@ -57,10 +55,6 @@ func (b *SimpleBlock) Nonce() *Byte8 {
 
 func (b *SimpleBlock) Timestamp() *Byte8 {
 	return b.timestamp
-}
-
-func (b *SimpleBlock) Genesis() Header {
-	return b.genesis
 }
 
 func (b *SimpleBlock) OpCode() *Byte8 {
@@ -111,12 +105,11 @@ func NewSimpleNodeInfo(id string) *SimpleNodeInfo {
 	}
 }
 
-func NewSimpleBlock(previous *Byte64, genesis *Byte64, miner NodeInfo) *SimpleBlock {
+func NewSimpleBlock(previous *Byte64, miner NodeInfo) *SimpleBlock {
 	return &SimpleBlock{
 		parentHash: previous,
 		miner: BytesToByte64([]byte(miner.Id())),
 		nonce: Uint64ToByte8(0x0),
-		genesis: NewSimpleHeader(genesis),
 		timestamp: Uint64ToByte8(uint64(time.Now().UnixNano())),
 		opCode: Uint64ToByte8(0),
 		hash: nil,

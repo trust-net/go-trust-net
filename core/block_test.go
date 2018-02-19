@@ -11,12 +11,9 @@ var genesis = BytesToByte64([]byte("genesis"))
 func TestNewSimpleBlock(t *testing.T) {
 	myNode := NewSimpleNodeInfo("test node")
 	now := time.Duration(time.Now().UnixNano())
-	block := NewSimpleBlock(previous, genesis, myNode)
+	block := NewSimpleBlock(previous, myNode)
 	if block.ParentHash() != previous {
 		t.Errorf("Block header does not match: Expected '%s', Found '%s'", previous, block.ParentHash())
-	}
-	if block.Genesis().Bytes() != genesis {
-		t.Errorf("Block header does not match: Expected '%s', Found '%s'", genesis, block.Genesis())
 	}
 	if *block.Miner() != *BytesToByte64([]byte(myNode.Id())) {
 		t.Errorf("Block miner does not match: Expected '%s', Found '%s'", BytesToByte64([]byte(myNode.Id())), block.Miner())
@@ -40,7 +37,7 @@ func TestNewSimpleBlock(t *testing.T) {
 
 func TestSimpleBlockHash(t *testing.T) {
 	myNode := NewSimpleNodeInfo("test node")
-	block := NewSimpleBlock(previous, genesis, myNode)
+	block := NewSimpleBlock(previous, myNode)
 	block.ComputeHash()
 	if len(block.Hash()) != 64 {
 		t.Errorf("Block hash not 64 bytes: Found '%d'", block.Hash())
