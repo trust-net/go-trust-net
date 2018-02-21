@@ -79,6 +79,20 @@ func CLI(c chan int, srv *p2p.Server) {
 							MsgId:	 *core.BytesToByte16(id.Bytes()),
 						}
 						log.AppLogger().Debug("sent message: '%s' to %d peers", text, pagerMgr.Broadcast(msg))
+					case "countr":
+						// flush the input line
+						for wordScanner.Scan() {
+							wordScanner.Text()
+						}
+						// get current network counter value
+						fmt.Printf("%d", counterMgr.Countr())
+					case "incr":
+						// flush the input line
+						for wordScanner.Scan() {
+							wordScanner.Text()
+						}
+						// ask counter manager to increment counter
+						counterMgr.Increment()
 					case "add":
 						wordScanner.Scan()
 						if peerNode := wordScanner.Text(); len(peerNode) == 0 {
@@ -191,7 +205,7 @@ func main() {
 		fmt.Printf("%s\n#######################\n%s", text, cmdPrompt)
 
 	})
-	counterMgr = counter.NewCountrProtocolManager()
+	counterMgr = counter.NewCountrProtocolManager(discover.PubkeyID(&nodekey.PublicKey).String())
 	protocols := make([]p2p.Protocol,0)
 	protocols = append(protocols, pagerMgr.Protocol())
 	protocols = append(protocols, counterMgr.Protocol())

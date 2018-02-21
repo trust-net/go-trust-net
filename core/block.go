@@ -20,6 +20,15 @@ type Block interface {
 	Hash() *Byte64
 }
 
+// a block spec
+type BlockSpec struct {
+	ParentHash *Byte64
+	Miner *Byte64
+	OpCode	*Byte8
+	Timestamp *Byte8
+	Nonce *Byte8
+}
+
 // a simple blockchain spec implementation
 type SimpleBlock struct {
 	parentHash *Byte64
@@ -27,7 +36,7 @@ type SimpleBlock struct {
 	hash *Byte64
 	opCode	*Byte8
 	timestamp *Byte8
-	nonce *Byte8
+	nonce uint64
 }
 
 func (b *SimpleBlock) ParentHash() *Byte64 {
@@ -39,7 +48,7 @@ func (b *SimpleBlock) Miner() *Byte64 {
 }
 
 func (b *SimpleBlock) Nonce() *Byte8 {
-	return b.nonce
+	return Uint64ToByte8(b.nonce)
 }
 
 func (b *SimpleBlock) Timestamp() *Byte8 {
@@ -48,6 +57,11 @@ func (b *SimpleBlock) Timestamp() *Byte8 {
 
 func (b *SimpleBlock) OpCode() *Byte8 {
 	return b.opCode
+}
+
+func (b *SimpleBlock) AddTransaction(opCode *Byte8) {
+	// we are only doing 1 transaction in a block
+	b.opCode = opCode
 }
 
 func (b *SimpleBlock) Hash() *Byte64 {
@@ -59,13 +73,14 @@ type SimpleHeader struct {
 }
 
 // block hash = SHA512(parent_hash + author_node + timestamp + opcode + nonce)
+// we don't do any mining yet!!!
 func (b *SimpleBlock) ComputeHash() {
 	data := make([]byte,0)
 	data = append(data, b.parentHash.Bytes()...)
 	data = append(data, b.miner.Bytes()...)
 	data = append(data, b.timestamp.Bytes()...)
 	data = append(data, b.opCode.Bytes()...)
-	data = append(data, b.nonce.Bytes()...)
+	data = append(data, Uint64ToByte8(b.nonce).Bytes()...)
 	hash := sha512.Sum512(data)
 	b.hash = BytesToByte64(hash[:])
 }
@@ -91,9 +106,35 @@ func NewSimpleBlock(previous *Byte64, ts uint64, miner NodeInfo) *SimpleBlock {
 	return &SimpleBlock{
 		parentHash: previous,
 		miner: BytesToByte64([]byte(miner.Id())),
-		nonce: Uint64ToByte8(0x0),
+		nonce: 0x0,
 		timestamp: Uint64ToByte8(ts),
 		opCode: Uint64ToByte8(0),
 		hash: nil,
+	}
+}
+
+// create a new simple block from a block spec
+func NewSimpleBlockFromSpec(spec *BlockSpec) *SimpleBlock {
+	block := SimpleBlock{
+		parentHash: BytesToByte64(spec.ParentHash.Bytes()),
+		miner: BytesToByte64(spec.Miner.Bytes()),
+		nonce: spec.Nonce.Uint64(),
+		timestamp: BytesToByte8(spec.Timestamp.Bytes()),
+		opCode: BytesToByte8(spec.OpCode.Bytes()),
+		hash: nil,
+	}
+	block.ComputeHash()
+	return &block
+}
+
+
+// create a new simple block from a block spec
+func NewBlockSpecFromBlock(block Block) *BlockSpec {
+	return &BlockSpec{
+		ParentHash: BytesToByte64(block.ParentHash().Bytes()),
+		Miner: BytesToByte64(block.Miner().Bytes()),
+		Nonce: BytesToByte8(block.Nonce().Bytes()),
+		Timestamp: BytesToByte8(block.Timestamp().Bytes()),
+		OpCode: BytesToByte8(block.OpCode().Bytes()),
 	}
 }

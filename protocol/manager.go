@@ -28,6 +28,9 @@ const (
 	ErrorUnknownMessageType = 0x03
 	ErrorNotImplemented = 0x04
 	ErrorSyncFailed = 0x05
+	ErrorInvalidRequest = 0x06
+	ErrorInvalidResponse = 0x07
+	ErrorNotFound = 0x08
 )
 
 // base protocol manager implementation for shared data and code,
@@ -54,6 +57,11 @@ func (mgr *ManagerBase) SetDb(db db.PeerSetDb) {
 	mgr.db = db
 }
 
+func (mgr *ManagerBase) UnregisterPeer(node *Node) {
+	mgr.db.UnRegisterPeerNodeForId(node.Peer().ID().String())
+	mgr.DecrPeer()
+}
+
 func (mgr *ManagerBase) AddPeer(node *discover.Node) error {
 	// we don't have a p2p server for individual protocol manager, and hence cannot add a node
 	// this will need to be done from outside, at the application level
@@ -61,16 +69,16 @@ func (mgr *ManagerBase) AddPeer(node *discover.Node) error {
 }
 
 // perform sub protocol handshake
-func (mgr *ManagerBase) Handshake(peer *p2p.Peer, status *HandshakeMsg, ws p2p.MsgReadWriter) error {
+func (mgr *ManagerBase) Handshake(status *HandshakeMsg, peer *Node) error {
 	// send our status to the peer
-	if err := p2p.Send(ws, Handshake, *status); err != nil {
+	if err := peer.Send(Handshake, *status); err != nil {
 		return NewProtocolError(ErrorHandshakeFailed, err.Error())
 	}
 
 	var msg p2p.Msg
 	var err error
 	err = common.RunTimeBound(5, func() error {
-			msg, err = ws.ReadMsg()
+			msg, err = peer.ReadMsg()
 			return err
 		}, NewProtocolError(ErrorHandshakeFailed, "timed out waiting for handshake status"))
 	if err != nil {
@@ -96,12 +104,11 @@ func (mgr *ManagerBase) Handshake(peer *p2p.Peer, status *HandshakeMsg, ws p2p.M
 	}
 
 	// add the peer into our DB
-	node := NewNode(peer, ws)
-	if err = mgr.db.RegisterPeerNode(node); err != nil {
+	if err = mgr.db.RegisterPeerNode(peer); err != nil {
 		return err
 	} else {
 		mgr.peerCount++
-		node.SetStatus(&handshake)
+		peer.SetStatus(&handshake)
 	}
 	return nil
 }

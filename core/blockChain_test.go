@@ -271,13 +271,12 @@ func TestBlockChainInMemWalkThroughMainListOnly(t *testing.T) {
 		}
 	}
 	// ask for list of blocks starting at the ancestor
-	// should be ancestor, followed by chain1 nodes (3 nodes)
+	// should skip ancestor qnd return chain1 nodes (2 nodes)
 	blocks := chain.Blocks(ancestor.Hash(), 10)
-	if len(blocks) != (len(chain1)+1) {
-		t.Errorf("chain traversal did not return correct number of blocks: Expected '%d' Found '%d'", 3, len(blocks))
+	if len(blocks) != (len(chain1)) {
+		t.Errorf("chain traversal did not return correct number of blocks: Expected '%d' Found '%d'", 2, len(blocks))
 	}
-	expected := []*SimpleBlock{ancestor}
-	for i, block := range(append(expected, chain1...)) {
+	for i, block := range(chain1) {
 		if blocks[i] != block {
 			t.Errorf("block at position [%d] is incorrect", i)
 		}

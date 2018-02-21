@@ -140,7 +140,12 @@ func (chain *BlockChainInMem) Blocks(parent *Byte64, max uint64) []Block {
 	// simple traversal down the main block chain list
 	chain.lock.RLock()
 	defer chain.lock.RUnlock()
-	for currNode, count := chain.nodes[*parent], uint64(0); currNode != nil && count < max; {
+	// skip the parent
+	currNode, count := chain.nodes[*parent], uint64(0)
+	if currNode != nil {
+		currNode = chain.findMainListChild(currNode, nil)
+	}
+	for ; currNode != nil && count < max; {
 		chain.logger.Debug("Traversing block at depth '%d' on main list", currNode.Depth())
 		blocks = append(blocks, currNode.Block())
 		currNode = chain.findMainListChild(currNode, nil)
