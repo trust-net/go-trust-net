@@ -31,6 +31,7 @@ const (
 	ErrorInvalidRequest = 0x06
 	ErrorInvalidResponse = 0x07
 	ErrorNotFound = 0x08
+	ErrorBadBlock = 0x09
 )
 
 // base protocol manager implementation for shared data and code,

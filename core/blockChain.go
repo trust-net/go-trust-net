@@ -57,6 +57,10 @@ func (chain *BlockChainInMem) Tip() *BlockNode {
 	return chain.leaves[0]
 }
 
+func (chain *BlockChainInMem) Genesis() *BlockNode {
+	return chain.genesis
+}
+
 func (chain *BlockChainInMem) BlockNode(hash *Byte64) (*BlockNode, bool) {
 	chain.lock.RLock()
 	defer chain.lock.RUnlock()
@@ -67,22 +71,22 @@ func (chain *BlockChainInMem) BlockNode(hash *Byte64) (*BlockNode, bool) {
 func (chain *BlockChainInMem) AddBlockNode(block Block) error {
 	if block == nil {
 		chain.logger.Error("attempt to add nil block!!!")
-		return NewCoreError("nil block")
+		return NewCoreError(ERR_INVALID_BLOCK, "nil block")
 	}
 	// make sure that block has computed hash
 	if block.Hash() == nil {
 		chain.logger.Error("attempt to add block without hash computed")
-		return NewCoreError("block does not have hash computed")
+		return NewCoreError(ERR_INVALID_HASH, "block does not have hash computed")
 	}
 	chain.lock.Lock()
 	defer chain.lock.Unlock()
 	if _, found := chain.nodes[*block.Hash()]; found {
 		chain.logger.Error("attempt to add duplicate block!!!")
-		return NewCoreError("duplicate block")
+		return NewCoreError(ERR_DUPLICATE_BLOCK, "duplicate block")
 	}
 	if parent, ok := chain.nodes[*block.ParentHash()]; !ok {
 		chain.logger.Error("attempt to add an orphan block!!!")
-		return NewCoreError("orphan block")
+		return NewCoreError(ERR_ORPHAN_BLOCK, "orphan block")
 	} else {
 		// add the new child node into our data store
 		child := NewBlockNode(block, parent.Depth()+1)

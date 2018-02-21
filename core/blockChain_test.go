@@ -58,6 +58,19 @@ func TestBlockChainInMemAddNode(t *testing.T) {
 	}
 }
 
+func TestBlockChainInMemAddNodeGenesis(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	genesis := testGenesisBlock(0x20000)
+	chain := NewBlockChainInMem(genesis)
+	myNode := NewSimpleNodeInfo("test node")
+	block := NewSimpleBlock(chain.genesis.Hash(), 0, myNode)
+	block.ComputeHash()
+	chain.AddBlockNode(block)
+	if *chain.Genesis().Hash() != *genesis.Hash() {
+		t.Errorf("Genesis reference not correct")
+	}
+}
+
 func TestBlockChainInMemAddNodeDepthUpdate(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	chain := NewBlockChainInMem(testGenesisBlock(0x20000))
@@ -69,7 +82,6 @@ func TestBlockChainInMemAddNodeDepthUpdate(t *testing.T) {
 		t.Errorf("Failed to update depth of the chain")
 	}
 }
-
 
 func TestBlockChainInMemAddNodeTdUpdate(t *testing.T) {
 	log.SetLogLevel(log.NONE)

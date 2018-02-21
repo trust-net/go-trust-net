@@ -3,6 +3,7 @@ package protocol
 import (
 	"time"
 	"sync"
+	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/common"
 	"github.com/ethereum/go-ethereum/p2p"
 )
@@ -40,6 +41,8 @@ type Node struct {
 	GetBlockHashesChan chan uint8
 	// channel for GetBlocksRequest
 	GetBlocksChan chan uint8
+	// last hash from the node
+	LastHash *core.Byte64
 }
 
 // create a new instance of a node based on new peer connection

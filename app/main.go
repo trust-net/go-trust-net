@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"strconv"
 	"crypto/ecdsa"
 	"encoding/json"
 	"flag"
@@ -87,12 +88,31 @@ func CLI(c chan int, srv *p2p.Server) {
 						// get current network counter value
 						fmt.Printf("%d", counterMgr.Countr())
 					case "incr":
-						// flush the input line
-						for wordScanner.Scan() {
-							wordScanner.Text()
+						wordScanner.Scan()
+						delta := 1
+						var err error
+						if word := wordScanner.Text(); len(word) != 0 {
+							if delta, err = strconv.Atoi(word); err != nil {
+								fmt.Printf("usage: incr <integer>\n")
+							}
 						}
 						// ask counter manager to increment counter
-						counterMgr.Increment()
+						if err == nil {
+							counterMgr.Increment(delta)
+						}
+					case "decr":
+						wordScanner.Scan()
+						delta := 1
+						var err error
+						if word := wordScanner.Text(); len(word) != 0 {
+							if delta, err = strconv.Atoi(word); err != nil {
+								fmt.Printf("usage: decr <integer>\n")
+							}
+						}
+						// ask counter manager to increment counter
+						if err == nil {
+							counterMgr.Decrement(delta)
+						}
 					case "add":
 						wordScanner.Scan()
 						if peerNode := wordScanner.Text(); len(peerNode) == 0 {

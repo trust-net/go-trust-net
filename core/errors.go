@@ -4,17 +4,30 @@ import (
 
 )
 
+const (
+	ERR_DUPLICATE_BLOCK = 0x01
+	ERR_ORPHAN_BLOCK = 0x02
+	ERR_INVALID_HASH = 0x03
+	ERR_INVALID_BLOCK = 0x04
+)
+
 type CoreError struct {
 	msg string
+	code int
 }
 
 func (err *CoreError) Error() string {
 	return err.msg
 }
 
-func NewCoreError(msg string) error {
+func (err *CoreError) Code() int {
+	return err.code
+}
+
+func NewCoreError(code int, msg string) error {
 	err := CoreError {
 		msg: msg,
+		code: code,
 	}
 	return &err
 }

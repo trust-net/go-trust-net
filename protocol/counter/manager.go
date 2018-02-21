@@ -61,30 +61,58 @@ func (mgr *CountrProtocolManager) Countr() int64 {
 	return mgr.count
 }
 
-func (mgr *CountrProtocolManager) Increment() {
-	mgr.logger.Debug("Incrementing network counter from '%d' --> '%d'", mgr.count, mgr.count+1)
+func (mgr *CountrProtocolManager) delta(opCode *core.Byte8) bool {
 	// create new block and add to my blockchain
 	block := core.NewSimpleBlock(mgr.chain.Tip().Hash(), 0, mgr.miner)
-	block.AddTransaction(OpIncrement)
+	block.AddTransaction(opCode)
 	block.ComputeHash()
 	if err := mgr.chain.AddBlockNode(block); err != nil {
-		// TODO handle error
 		mgr.logger.Error("Failed to increment counter: %s", err.Error())
-		return
-	} else {
-		// increment our counter
-		mgr.count++
-		// broadcast counter increment to peers
-		if err := mgr.broadCast(core.NewBlockSpecFromBlock(block)); err != nil {
-			// TODO, handle error
-		mgr.logger.Debug("Failed to broadcast counter: %s", err.Error())
+		return false
+	}
+	// broadcast counter change to peers
+	count := mgr.broadCast(block)
+	mgr.logger.Debug("Relayed new block to %d peers", count)
+	return true
+}
+
+func (mgr *CountrProtocolManager) Increment(delta int) {
+	mgr.logger.Debug("Incrementing network counter from '%d' --> '%d'", mgr.count, mgr.count+int64(delta))
+	for delta > 0 {
+		if  mgr.delta(OpIncrement) {
+			// increment our counter
+			mgr.count++
+			delta--
+		} else {
+			return
 		}
 	}
 }
 
-func (mgr *CountrProtocolManager) broadCast(block *core.BlockSpec) error {
-	mgr.logger.Error("Need to implement broadcast method!")
-	return protocol.NewProtocolError(protocol.ErrorNotImplemented, "broadcast method not implemented")
+func (mgr *CountrProtocolManager) Decrement(delta int) {
+	mgr.logger.Debug("Decrementing network counter from '%d' --> '%d'", mgr.count, mgr.count-int64(delta))
+	for delta > 0 {
+		if  mgr.delta(OpDecrement) {
+			// increment our counter
+			mgr.count--
+			delta--
+		} else {
+			return
+		}
+	}
+}
+
+func (mgr *CountrProtocolManager) broadCast(block core.Block) int {
+	count := 0
+	for _, node := range mgr.Db().PeerNodesWithMsgNotSeen(block.Hash()) {
+		peer, _ := node.(*protocol.Node)
+		// first mark this peer as has seen this message, so we can stop cyclic receive immediately
+		peer.AddTx(block.Hash())
+		peer.Send(NewBlock, NewBlockMsg(*core.NewBlockSpecFromBlock(block)))
+		mgr.logger.Debug("relayed message '%s' to %s", block.Hash(), peer.Peer().Name())
+		count++
+	}
+	return count
 }
 
 func (mgr *CountrProtocolManager) getHandshakeMsg() *protocol.HandshakeMsg {
@@ -92,14 +120,24 @@ func (mgr *CountrProtocolManager) getHandshakeMsg() *protocol.HandshakeMsg {
 	return &handshakeMsg
 }
 
+// this log needs to be revisited, we need to better handle two cases:
+//    #1 when there was a fork and alternate best chain, we need our world state to be re-adjusted due to fork
+//    #2 when we sync after a restart, we need to skip the hashes already known, and start asking only unknown blocks 
 func (mgr *CountrProtocolManager) syncNode(node *protocol.Node) error {
+	// check if need sync
+	if node.Status().TotalWeight.Uint64() <= mgr.getHandshakeMsg().TotalWeight.Uint64() {
+		return nil
+	}
+	// reset our counter
+	mgr.count = 0 // THIS MAY NOT BE CORRECT, UNLESS IF WE FLUSH THE DB TOO!
+	node.LastHash = mgr.chain.Genesis().Hash()
 	// wait until sync completes, or an error
 	for node.Status().TotalWeight.Uint64() > mgr.getHandshakeMsg().TotalWeight.Uint64() {
 		mgr.logger.Debug("Requesting sync: peer weight '%d' > our weight '%d'",
 			node.Status().TotalWeight.Uint64(), mgr.getHandshakeMsg().TotalWeight.Uint64())
-		// request sync starting with current status
+		// request sync starting from the genesis block (in case there was a fork with better chain)
 		if err := node.Send(GetBlockHashesRequest, GetBlockHashesRequestMsg{
-				ParentHash: *mgr.chain.Tip().Hash(),
+				ParentHash: *node.LastHash,
 				MaxBlocks: *core.Uint64ToByte8(uint64(maxBlocks)),
 		}); err != nil {
 			return protocol.NewProtocolError(protocol.ErrorSyncFailed, err.Error())
@@ -137,37 +175,80 @@ func (mgr *CountrProtocolManager) listen(peer *protocol.Node) error {
 			case GetBlockHashesRequest:
 				// handle the sync request message to fetch hashes
 				if err := mgr.handleGetBlockHashesRequestMsg(msg, peer); err != nil {
-					peer.Peer().Log().Error("Error: %s", err.Error())
+					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case GetBlockHashesResponse:
 				// handle the sync response message with hashes
 				if err := mgr.handleGetBlockHashesResponseMsg(msg, peer); err != nil {
-					peer.Peer().Log().Error("Error: %s", err.Error())
+					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case GetBlocksRequest:
 				// handle sync request to fetch block specs
 				if err := mgr.handleGetBlocksRequestMsg(msg, peer); err != nil {
-					peer.Peer().Log().Error("Error: %s", err.Error())
+					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case GetBlocksResponse:
 				// handle sync request to fetch block specs
 				if err := mgr.handleGetBlocksResponseMsg(msg, peer); err != nil {
+					mgr.logger.Error("Error: %s", err.Error())
+					return err
+				}
+			case NewBlock:
+				// handle new block announcement
+				if err := mgr.handleNewBlockMsg(msg, peer); err != nil {
 					peer.Peer().Log().Error("Error: %s", err.Error())
 					return err
 				}
-				
 			default:
 				// error condition, unknown protocol message
 				err := protocol.NewProtocolError(protocol.ErrorUnknownMessageType, "unknown protocol message recieved")
-				peer.Peer().Log().Debug("Error: %s", err.Error())
+				mgr.logger.Error("Error: %s", err.Error())
 				return err
 		}
 	}
 }
 
+func (mgr *CountrProtocolManager) processBlockSpec(spec *core.BlockSpec, from *protocol.Node) (int64, *core.Byte64, error) {
+		block := core.NewSimpleBlockFromSpec(spec)
+		var delta int64
+		switch block.OpCode().Uint64() {
+			case opIncrement:
+				delta = 1
+			case opDecrement:
+				delta = -1
+			default:
+				mgr.logger.Error("Invalid opcode '%d' from '%s'", block.OpCode().Uint64(), from.ID())
+				return 0, nil, protocol.NewProtocolError(protocol.ErrorInvalidResponse, "GetBlocksResponseMsg has invalid opcode")
+		}
+		// add block to our blockchain
+		if err := mgr.chain.AddBlockNode(block); err != nil {
+			mgr.logger.Error("Failed to add new block from '%s'", from.ID())
+			return delta, block.Hash(), err
+		}
+		// update our counter
+		return delta, block.Hash(), nil	
+}
+
+func (mgr *CountrProtocolManager) handleNewBlockMsg(msg p2p.Msg, from *protocol.Node) error {
+	var newBlockMsg NewBlockMsg
+	if err := msg.Decode(&newBlockMsg); err != nil {
+		return protocol.NewProtocolError(protocol.ErrorBadBlock, err.Error())
+	}
+	// process the block
+	spec := core.BlockSpec(newBlockMsg)
+	if delta, hash, err := mgr.processBlockSpec(&spec, from); err != nil {
+		// abort sync
+		from.GetBlockHashesChan <- protocol.CHAN_ERROR
+		return err
+	} else {
+		mgr.count += delta
+		from.LastHash = hash
+	}
+	return nil	
+}
 func (mgr *CountrProtocolManager) handleGetBlocksRequestMsg(msg p2p.Msg, to *protocol.Node) error {
 	var request GetBlocksRequestMsg
 	if err := msg.Decode(&request); err != nil {
@@ -216,27 +297,17 @@ func (mgr *CountrProtocolManager) handleGetBlocksResponseMsg(msg p2p.Msg, from *
 		mgr.logger.Error("GetBlocksResponseMsg does not have any blocks from '%s'", from.ID())
 		return protocol.NewProtocolError(protocol.ErrorInvalidRequest, "GetBlocksResponseMsg does not have any blocks")
 	}
-	// walk through the list of blocks and add then into our blockchain
+	// walk through the list of blocks and add them into our blockchain
 	for _, spec := range specs {
-		// process the new block
-		block := core.NewSimpleBlockFromSpec(spec)
-		var delta int64
-		switch block.OpCode().Uint64() {
-			case opIncrement:
-				delta = 1
-			case opDecrement:
-				delta = -1
-			default:
-				mgr.logger.Error("Invalid opcode '%d' from '%s'", block.OpCode().Uint64(), from.ID())
-				return protocol.NewProtocolError(protocol.ErrorInvalidResponse, "GetBlocksResponseMsg has invalid opcode")
-		}
-		// add block to our blockchain
-		if err := mgr.chain.AddBlockNode(block); err != nil {
-			mgr.logger.Error("Failed to add new block from '%s'", from.ID())
+		// process the new block, and ignore duplicate add errors
+		if delta, hash, err := mgr.processBlockSpec(spec, from); err != nil && err.(*core.CoreError).Code() != core.ERR_DUPLICATE_BLOCK {
+			// abort sync
+			from.GetBlockHashesChan <- protocol.CHAN_ERROR
 			return err
+		} else {
+			mgr.count += delta
+			from.LastHash = hash
 		}
-		// update our counter
-		mgr.count += delta
 	}
 	// done processing batch of hashes, ask for next batch
 	from.GetBlockHashesChan <- protocol.CHAN_NEXT
@@ -326,7 +397,7 @@ func (mgr *CountrProtocolManager) Protocol() p2p.Protocol {
 				
 				mgr.logger.Debug("Handshake Succeeded with '%s'", peer.Name())
 
-				// check and perform a sync based on total weigth
+				// check and perform a sync based on total weight
 				go func() {
 					if err := mgr.syncNode(node); err != nil {
 						mgr.logger.Error("Sync failed: '%s'", err)

@@ -50,9 +50,7 @@ type GetBlocksRequestMsg []core.Byte64
 type GetBlocksResponseMsg []*core.BlockSpec
 
 // Announce a new countr block
-type NewBlockMsg struct {
-	*core.BlockSpec
-}
+type NewBlockMsg core.BlockSpec
 
 //
 //// Header implementation
