@@ -11,8 +11,10 @@ const (
 	GetBlockHashesRequest = protocol.Handshake + 1
 	// response with block hashes
 	GetBlockHashesResponse = GetBlockHashesRequest + 1
+	// peer is not on main blockchain and needs to rewind to earlier block
+	GetBlockHashesRewind = GetBlockHashesResponse + 1
 	// request to get blocks
-	GetBlocksRequest = GetBlockHashesResponse + 1
+	GetBlocksRequest = GetBlockHashesRewind + 1
 	// response to get blocks
 	GetBlocksResponse = GetBlocksRequest + 1
 	// new block accouncement
@@ -42,6 +44,9 @@ type GetBlockHashesRequestMsg struct {
 
 // response with array of block hashes
 type GetBlockHashesResponseMsg []core.Byte64
+
+// node needs to rewind back to specified block
+type GetBlockHashesRewindMsg core.Byte64
 
 // request block specs for specified hashes
 type GetBlocksRequestMsg []core.Byte64

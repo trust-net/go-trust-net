@@ -128,9 +128,8 @@ func (mgr *CountrProtocolManager) syncNode(node *protocol.Node) error {
 	if node.Status().TotalWeight.Uint64() <= mgr.getHandshakeMsg().TotalWeight.Uint64() {
 		return nil
 	}
-	// reset our counter
-	mgr.count = 0 // THIS MAY NOT BE CORRECT, UNLESS IF WE FLUSH THE DB TOO!
-	node.LastHash = mgr.chain.Genesis().Hash()
+	// lets assume our tip is the last known to us block on main blockchain
+	node.LastHash = mgr.chain.Tip().Hash()
 	// wait until sync completes, or an error
 	for node.Status().TotalWeight.Uint64() > mgr.getHandshakeMsg().TotalWeight.Uint64() {
 		mgr.logger.Debug("Requesting sync: peer weight '%d' > our weight '%d'",
@@ -184,6 +183,12 @@ func (mgr *CountrProtocolManager) listen(peer *protocol.Node) error {
 					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
+			case GetBlockHashesRewind:
+				// handle the sync rewind message
+				if err := mgr.handleGetBlockHashesRewindMsg(msg, peer); err != nil {
+					mgr.logger.Error("Error: %s", err.Error())
+					return err
+				}
 			case GetBlocksRequest:
 				// handle sync request to fetch block specs
 				if err := mgr.handleGetBlocksRequestMsg(msg, peer); err != nil {
@@ -232,6 +237,35 @@ func (mgr *CountrProtocolManager) processBlockSpec(spec *core.BlockSpec, from *p
 		return delta, block.Hash(), nil	
 }
 
+func (mgr *CountrProtocolManager) handleGetBlockHashesRewindMsg(msg p2p.Msg, from *protocol.Node) error {
+	var rewindHash GetBlockHashesRewindMsg
+	if err := msg.Decode(&rewindHash); err != nil {
+		return protocol.NewProtocolError(protocol.ErrorInvalidResponse, err.Error())
+	}
+	// validate that specified hash is in our DB
+	hash := core.Byte64(rewindHash)
+	if blockNode, found := mgr.chain.BlockNode(&hash); !found {
+		// peer tried to misdirect us to invalid hash
+		mgr.logger.Debug("Invalid rewind hash '%d' from '%s'", hash, from.ID())
+		from.GetBlockHashesChan <- protocol.CHAN_ABORT
+		return protocol.NewProtocolError(protocol.ErrorInvalidResponse, "invalid hash in rewind msg")
+	} else {
+		// rewind to specified hash and restart sync
+		mgr.logger.Debug("Rewinding back to hash '%d' as suggested by '%s'", hash, from.ID())
+		from.LastHash = blockNode.Hash()
+		// ideally we want to reset world state to the world state corresponding to block node
+		// but for POC Iteration 1 we are just going back to genesis and restarting
+		if *blockNode.Hash() != *mgr.genesis.Hash() {
+			mgr.logger.Debug("Rewind hash provided does not match genesis, from '%s'", hash, from.ID())
+			from.GetBlockHashesChan <- protocol.CHAN_ABORT
+			return protocol.NewProtocolError(protocol.ErrorInvalidResponse, "rewind hash does not match genesis")
+		}
+		mgr.count = 0
+		from.GetBlockHashesChan <- protocol.CHAN_RETRY
+	}
+	return nil
+}
+
 func (mgr *CountrProtocolManager) handleNewBlockMsg(msg p2p.Msg, from *protocol.Node) error {
 	var newBlockMsg NewBlockMsg
 	if err := msg.Decode(&newBlockMsg); err != nil {
@@ -249,6 +283,7 @@ func (mgr *CountrProtocolManager) handleNewBlockMsg(msg p2p.Msg, from *protocol.
 	}
 	return nil	
 }
+
 func (mgr *CountrProtocolManager) handleGetBlocksRequestMsg(msg p2p.Msg, to *protocol.Node) error {
 	var request GetBlocksRequestMsg
 	if err := msg.Decode(&request); err != nil {
@@ -326,7 +361,12 @@ func (mgr *CountrProtocolManager) handleGetBlockHashesRequestMsg(msg p2p.Msg, fr
 	if len(blocks) < 1 {
 		// no blocks to send
 		mgr.logger.Debug("%s: GetBlockHashesRequest does not have any hashes", from.ID())
-		return protocol.NewProtocolError(protocol.ErrorNotFound, "GetBlockHashesRequest did not find any hashes")
+		// notify peer to rewind and re-sync from start
+		if err := from.Send(GetBlockHashesRewind, GetBlockHashesRewindMsg(*mgr.genesis.Hash())); err != nil {
+			mgr.logger.Debug("failed to send GetBlockHashesRewind")
+			return err
+		}
+		return nil
 	}
 	hashes := make([]core.Byte64, len(blocks), len(blocks))
 	for i, block := range blocks {
