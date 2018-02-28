@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"crypto/ecdsa"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 
@@ -49,12 +50,14 @@ func (c *Config) SetPort(port *string) {
 	c.port = port
 }
 
-func (c *Config) setNatEnabled(natEnabled *bool) {
+func (c *Config) SetNatEnabled(natEnabled *bool) {
 	c.natEnabled = natEnabled
 }
 
-func NewConfig(configFile *string) *Config {
-	// TODO
-	
-	return &Config{}
+func NewConfig(configFile *string) (*Config, error) {
+	if _, err := os.Open(*configFile); err == nil {
+		return &Config{}, nil	
+	} else {
+		return nil, NewConfigError(ERR_INVALID_FILE, err.Error());
+	}
 }

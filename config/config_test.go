@@ -5,8 +5,8 @@ import (
 )
 
 func TestHappyPathInitialization(t *testing.T) {
-	configFile := "some file"
-	config := NewConfig(&configFile)
+	configFile := "testConfig.json"
+	config, _ := NewConfig(&configFile)
 	if config.Bootnodes() != nil {
 		t.Errorf("Unexpected default value for bootnodes', Found '%s'", config.Bootnodes())
 	}
@@ -26,7 +26,32 @@ func TestHappyPathInitialization(t *testing.T) {
 		t.Errorf("Unexpected default value for Port', Found '%s'", config.Port())
 	}
 	if config.isNatEnabled() != nil {
-		t.Errorf("Unexpected default value for Port', Found '%s'", config.isNatEnabled())
+		t.Errorf("Unexpected default value for nat enabled flag', Found '%s'", config.isNatEnabled())
 	}
 }
 
+func TestSetters(t *testing.T) {
+	configFile := "testConfig.json"
+	config, _ := NewConfig(&configFile)
+	port := "1234"
+	config.SetPort(&port)
+	natEnabled := true
+	config.SetNatEnabled(&natEnabled)
+	if *config.Port() != port {
+		t.Errorf("Unexpected value for Port', Found '%s'", config.Port())
+	}
+	if *config.isNatEnabled() != true {
+		t.Errorf("Unexpected  value for nat enabled flag', Found '%s'", config.isNatEnabled())
+	}
+}
+
+func TestInvalidConfigFile(t *testing.T) {
+	configFile := "invalidfile"
+	if _, err := NewConfig(&configFile); err == nil {
+		t.Errorf("Did not detect invalid config file")
+	} else if err.(*ConfigError).Code() != ERR_INVALID_FILE {
+		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_INVALID_FILE, err.(*ConfigError).Code())
+	} else {
+		t.Logf("Got correct error: %s", err.Error())
+	}
+}
