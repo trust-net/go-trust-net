@@ -2,11 +2,16 @@ package config
 
 import (
     "testing"
+    "fmt"
 )
 
 func TestHappyPathInitialization(t *testing.T) {
 	configFile := "testConfig.json"
-	config, _ := NewConfig(&configFile)
+	config, err := NewConfig(&configFile)
+	if err != nil {
+		t.Errorf("Failed to create config '%s'", err.Error())
+		return
+	}
 	if config.Bootnodes() != nil {
 		t.Errorf("Unexpected default value for bootnodes', Found '%s'", config.Bootnodes())
 	}
@@ -32,7 +37,11 @@ func TestHappyPathInitialization(t *testing.T) {
 
 func TestSetters(t *testing.T) {
 	configFile := "testConfig.json"
-	config, _ := NewConfig(&configFile)
+	config, err := NewConfig(&configFile)
+	if err != nil {
+		t.Errorf("Failed to create config '%s'", err.Error())
+		return
+	}
 	port := "1234"
 	config.SetPort(&port)
 	natEnabled := true
@@ -45,6 +54,28 @@ func TestSetters(t *testing.T) {
 	}
 }
 
+func TestNullConfigFile(t *testing.T) {
+	configFile := "nullconfig.json"
+	if _, err := NewConfig(&configFile); err == nil {
+		t.Errorf("Did not detect null config file")
+	} else if err.(*ConfigError).Code() != ERR_NULL_CONFIG {
+		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_INVALID_FILE, err.(*ConfigError).Code())
+	} else {
+		fmt.Printf("Got correct error: %s\n", err.Error())
+	}
+}
+
+func TestInvalidConfigData(t *testing.T) {
+	configFile := "invalidConfig.json"
+	if _, err := NewConfig(&configFile); err == nil {
+		t.Errorf("Did not detect invalid config data")
+	} else if err.(*ConfigError).Code() != ERR_INVALID_CONFIG {
+		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_INVALID_FILE, err.(*ConfigError).Code())
+	} else {
+		fmt.Printf("Got correct error: %s\n", err.Error())
+	}
+}
+
 func TestInvalidConfigFile(t *testing.T) {
 	configFile := "invalidfile"
 	if _, err := NewConfig(&configFile); err == nil {
@@ -52,6 +83,6 @@ func TestInvalidConfigFile(t *testing.T) {
 	} else if err.(*ConfigError).Code() != ERR_INVALID_FILE {
 		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_INVALID_FILE, err.(*ConfigError).Code())
 	} else {
-		t.Logf("Got correct error: %s", err.Error())
+		fmt.Printf("Got correct error: %s\n", err.Error())
 	}
 }

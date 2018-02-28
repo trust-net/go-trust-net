@@ -6,6 +6,8 @@ import (
 
 const (
 	ERR_INVALID_FILE = 0x01
+	ERR_NULL_CONFIG = 0x02
+	ERR_INVALID_CONFIG = 0x03
 )
 
 type ConfigError struct {

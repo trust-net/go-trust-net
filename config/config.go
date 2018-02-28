@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"crypto/ecdsa"
+	"encoding/json"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 
 )
@@ -55,8 +56,19 @@ func (c *Config) SetNatEnabled(natEnabled *bool) {
 }
 
 func NewConfig(configFile *string) (*Config, error) {
-	if _, err := os.Open(*configFile); err == nil {
-		return &Config{}, nil	
+	if file, err := os.Open(*configFile); err == nil {
+		data := make([]byte, 1024)
+		if count, err := file.Read(data); err == nil && count <= 1024 {
+			data = data[:count]
+			params := struct{}{}
+			if err := json.Unmarshal(data, &params); err != nil {
+				return nil, NewConfigError(ERR_INVALID_CONFIG, err.Error());
+			} else {
+				return &Config{}, nil
+			}
+		} else {
+			return nil, NewConfigError(ERR_NULL_CONFIG, err.Error());
+		}
 	} else {
 		return nil, NewConfigError(ERR_INVALID_FILE, err.Error());
 	}
