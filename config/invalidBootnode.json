@@ -1,0 +1,6 @@
+{
+	"key_file" : "test_key_file.json",
+	"boot_nodes": [
+		"enode://c4ce8db4e989e88a4591c727aff984e8c2263284c5e9ca36226c3a6dee15d10d718a6eaa0967e5a98974291f05baf571873e84b8862e0564128f91cc1ed19a@67.169.5.2:32323"
+	]
+}
