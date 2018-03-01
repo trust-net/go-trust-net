@@ -1,3 +1,6 @@
 {
+	"data_dir": "tmp",
+	"network_id": "0.0.0.0",
+	"node_name": "test node",
 	"key_file" : "deleteMe.log"
 }

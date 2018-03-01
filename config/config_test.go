@@ -16,14 +16,14 @@ func TestHappyPathInitialization(t *testing.T) {
 	if config.Bootnodes()[0].String() != "enode://6cc4ce8db4e989e88a4591c727aff984e8c2263284c5e9ca36226c3a6dee15d10d718a6eaa0967e5a98974291f05baf571873e84b8862e0564128f91cc1ed19a@67.169.5.2:32323" {
 		t.Errorf("Unexpected value for bootnodes', Found '%s'", config.Bootnodes())
 	}
-	if config.NodeName() != nil {
-		t.Errorf("Unexpected default value for Name', Found '%s'", config.NodeName())
+	if *config.NodeName() != "test node" {
+		t.Errorf("Unexpected default value for Name', Found '%s'", *config.NodeName())
 	}
-	if config.NetworkId() != nil {
-		t.Errorf("Unexpected default value for NetworkId', Found '%s'", config.NetworkId())
+	if *config.NetworkId() != "0.0.0.0" {
+		t.Errorf("Unexpected default value for NetworkId', Found '%s'", *config.NetworkId())
 	}
-	if config.DataDir() != nil {
-		t.Errorf("Unexpected default value for DataDir', Found '%s'", config.DataDir())
+	if *config.DataDir() != "tmp" {
+		t.Errorf("Unexpected default value for DataDir', Found '%s'", *config.DataDir())
 	}
 	expected := "3661376330396163373461343666633036613661326438623532316132613762333062613863613065333963656461356439363061626563306362356533396639643063643139393162326534386637326536313337323630333039353762366366386639613934303431306466643264313463643164353432333761346134"
 	hex := fmt.Sprintf("%x", discover.PubkeyID(&config.Key().PublicKey))
@@ -121,6 +121,45 @@ func TestNewKeyFile(t *testing.T) {
 	}
 	if config.Key() == nil {
 		t.Errorf("key file not generated")
+	}
+}
+
+func TestMandatoryParamDataDir(t *testing.T) {
+	configFile := "noDataDirectory.json"
+	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+		t.Errorf("Did not detect missing data dir")
+		return
+	} else if err.(*ConfigError).Code() != ERR_MISSING_PARAM {
+		fmt.Printf("Got error: %s\n", err.Error())
+		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_MISSING_PARAM, err.(*ConfigError).Code())
+	} else {
+		fmt.Printf("Got correct error: %s\n", err.Error())
+	}
+}
+
+func TestMandatoryParamNodeName(t *testing.T) {
+	configFile := "noNodeName.json"
+	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+		t.Errorf("Did not detect missing node name")
+		return
+	} else if err.(*ConfigError).Code() != ERR_MISSING_PARAM {
+		fmt.Printf("Got error: %s\n", err.Error())
+		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_MISSING_PARAM, err.(*ConfigError).Code())
+	} else {
+		fmt.Printf("Got correct error: %s\n", err.Error())
+	}
+}
+
+func TestMandatoryParamNetworkId(t *testing.T) {
+	configFile := "noNetworkId.json"
+	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+		t.Errorf("Did not detect missing network ID")
+		return
+	} else if err.(*ConfigError).Code() != ERR_MISSING_PARAM {
+		fmt.Printf("Got error: %s\n", err.Error())
+		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_MISSING_PARAM, err.(*ConfigError).Code())
+	} else {
+		fmt.Printf("Got correct error: %s\n", err.Error())
 	}
 }
 

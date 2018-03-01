@@ -63,14 +63,6 @@ func (c *Config) NatEnabled() *bool {
 	return c.natEnabled
 }
 
-//func (c *Config) SetPort(port *string) {
-//	c.port = port
-//}
-//
-//func (c *Config) SetNatEnabled(natEnabled *bool) {
-//	c.natEnabled = natEnabled
-//}
-
 func NewConfig(configFile *string, port *string, natEnabled *bool) (*Config, error) {
 	// open the config file
 	if file, err := os.Open(*configFile); err == nil {
@@ -83,6 +75,18 @@ func NewConfig(configFile *string, port *string, natEnabled *bool) (*Config, err
 			if err := json.Unmarshal(data, &params); err != nil {
 				return nil, NewConfigError(ERR_INVALID_CONFIG, err.Error());
 			} else {
+				// validate mandatory simple config params
+				if params.DataDir == nil {
+					return nil, NewConfigError(ERR_MISSING_PARAM, "data directory not specified")
+				}
+				// TODO, add check for valid and accessible directory
+				
+				if params.NetworkId == nil {
+					return nil, NewConfigError(ERR_MISSING_PARAM, "network ID not specified")
+				}
+				if params.NodeName == nil {
+					return nil, NewConfigError(ERR_MISSING_PARAM, "node name not specified")
+				}
 				// populate simple config parameters
 				config := Config {
 					nodeName: params.NodeName,
