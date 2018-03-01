@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"sync"
 	"crypto/ecdsa"
 	"encoding/json"
 	"math/big"
@@ -10,8 +11,8 @@ import (
 
 )
 
-// container class for different configuration parameters
-type Config struct{
+// container class for different service configurations
+type config struct{
 	bootnodes []*discover.Node
 	nodeName *string
 	networkId *string
@@ -35,35 +36,54 @@ type keyPair struct {
 	D []byte
 }
 
-func (c *Config) Bootnodes() []*discover.Node {
+var c *config
+var lock   sync.RWMutex
+
+func Config() (*config, error) {
+	if c == nil {
+		return nil, NewConfigError(ERR_NOT_INITIALIZED, "service config not initialized")
+	}
+	return c, nil
+} 
+
+func (c *config) Bootnodes() []*discover.Node {
 	return c.bootnodes
 }
 
-func (c *Config) NodeName() *string {
+func (c *config) NodeName() *string {
 	return c.nodeName
 }
 
-func (c *Config) NetworkId() *string {
+func (c *config) NetworkId() *string {
 	return c.networkId
 }
 
-func (c *Config) DataDir() *string {
+func (c *config) DataDir() *string {
 	return c.dataDir
 }
 
-func (c *Config) Key() *ecdsa.PrivateKey {
+func (c *config) Key() *ecdsa.PrivateKey {
 	return c.key
 }
 
-func (c *Config) Port() *string {
+func (c *config) Port() *string {
 	return c.port
 }
 
-func (c *Config) NatEnabled() *bool {
+func (c *config) NatEnabled() *bool {
 	return c.natEnabled
 }
 
-func NewConfig(configFile *string, port *string, natEnabled *bool) (*Config, error) {
+func InitializeConfig(configFile *string, port *string, natEnabled *bool) error {
+	// check if already initialized
+	if c != nil {
+		return nil
+	}
+	lock.Lock()
+	defer lock.Unlock()
+	if c != nil {
+		return nil
+	}
 	// open the config file
 	if file, err := os.Open(*configFile); err == nil {
 		data := make([]byte, 1024)
@@ -73,22 +93,22 @@ func NewConfig(configFile *string, port *string, natEnabled *bool) (*Config, err
 			params := configParams{}
 			// parse json data into structure
 			if err := json.Unmarshal(data, &params); err != nil {
-				return nil, NewConfigError(ERR_INVALID_CONFIG, err.Error());
+				return NewConfigError(ERR_INVALID_CONFIG, err.Error());
 			} else {
 				// validate mandatory simple config params
 				if params.DataDir == nil {
-					return nil, NewConfigError(ERR_MISSING_PARAM, "data directory not specified")
+					return NewConfigError(ERR_MISSING_PARAM, "data directory not specified")
 				}
 				// TODO, add check for valid and accessible directory
 				
 				if params.NetworkId == nil {
-					return nil, NewConfigError(ERR_MISSING_PARAM, "network ID not specified")
+					return NewConfigError(ERR_MISSING_PARAM, "network ID not specified")
 				}
 				if params.NodeName == nil {
-					return nil, NewConfigError(ERR_MISSING_PARAM, "node name not specified")
+					return NewConfigError(ERR_MISSING_PARAM, "node name not specified")
 				}
 				// populate simple config parameters
-				config := Config {
+				config := config {
 					nodeName: params.NodeName,
 					port: port,
 					natEnabled: natEnabled,
@@ -102,13 +122,13 @@ func NewConfig(configFile *string, port *string, natEnabled *bool) (*Config, err
 						if enode, err := discover.ParseNode(*bootnode); err == nil {
 							config.bootnodes = append(config.bootnodes, enode)
 						} else {
-							return nil, NewConfigError(ERR_INVALID_BOOTNODE, err.Error());
+							return NewConfigError(ERR_INVALID_BOOTNODE, err.Error())
 						}
 					}
 				}
 				// parse secret key file, if present, else generate new secret key and persist
 				if params.KeyFile == nil {
-					return nil, NewConfigError(ERR_MISSING_PARAM, "key filename not specified")
+					return NewConfigError(ERR_MISSING_PARAM, "key filename not specified")
 				}
 				if file, err := os.Open(*params.KeyFile); err == nil {
 					// source the secret key from file
@@ -117,7 +137,7 @@ func NewConfig(configFile *string, port *string, natEnabled *bool) (*Config, err
 						data = data[:count]
 						kp := keyPair{}
 						if err := json.Unmarshal(data, &kp); err != nil {
-							return nil, NewConfigError(ERR_INVALID_SECRET_DATA, err.Error())
+							return NewConfigError(ERR_INVALID_SECRET_DATA, err.Error())
 						} else {
 							nodekey := new(ecdsa.PrivateKey)
 							nodekey.PublicKey.Curve = crypto.S256()
@@ -130,7 +150,7 @@ func NewConfig(configFile *string, port *string, natEnabled *bool) (*Config, err
 							config.key = nodekey
 						}
 					} else {
-						return nil, NewConfigError(ERR_INVALID_SECRET_FILE, err.Error());
+						return NewConfigError(ERR_INVALID_SECRET_FILE, err.Error())
 					}
 				} else {
 					// generate new secret key and persist to file
@@ -145,19 +165,20 @@ func NewConfig(configFile *string, port *string, natEnabled *bool) (*Config, err
 						if file, err := os.Create(*params.KeyFile); err == nil {
 							file.Write(data)
 						} else {
-							return nil, NewConfigError(ERR_INVALID_SECRET_FILE, err.Error())
+							return NewConfigError(ERR_INVALID_SECRET_FILE, err.Error())
 						}
 					} else {
-						return nil, NewConfigError(ERR_MARSHAL_FAILURE, err.Error())
+						return NewConfigError(ERR_MARSHAL_FAILURE, err.Error())
 					}
 					config.key = nodekey
 				}
-				return &config, nil
+				c = &config
+				return nil
 			}
 		} else {
-			return nil, NewConfigError(ERR_NULL_CONFIG, err.Error());
+			return NewConfigError(ERR_NULL_CONFIG, err.Error())
 		}
 	} else {
-		return nil, NewConfigError(ERR_INVALID_FILE, err.Error());
+		return NewConfigError(ERR_INVALID_FILE, err.Error())
 	}
 }

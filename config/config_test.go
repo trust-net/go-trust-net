@@ -6,9 +6,17 @@ import (
 	"github.com/ethereum/go-ethereum/p2p/discover"
 )
 
+// it seems go unit tests persist package scope artifacts, and hence need to
+// explicitly reset/clear package scope variable before each test case run
+func reset() {
+	c = nil
+}
+
 func TestHappyPathInitialization(t *testing.T) {
+	reset()
 	configFile := "testConfig.json"
-	config, err := NewConfig(&configFile, nil, nil)
+	err := InitializeConfig(&configFile, nil, nil)
+	config, _ := Config()
 	if err != nil {
 		t.Errorf("Failed to create config '%s'", err.Error())
 		return
@@ -39,14 +47,16 @@ func TestHappyPathInitialization(t *testing.T) {
 }
 
 func TestSetters(t *testing.T) {
+	reset()
 	configFile := "testConfig.json"
 	port := "1234"
 	natEnabled := true
-	config, err := NewConfig(&configFile, &port, &natEnabled)
+	err := InitializeConfig(&configFile, &port, &natEnabled)
 	if err != nil {
 		t.Errorf("Failed to create config '%s'", err.Error())
 		return
 	}
+	config, _ := Config()
 	if *config.Port() != port {
 		t.Errorf("Unexpected value for Port', Found '%s'", config.Port())
 	}
@@ -56,8 +66,9 @@ func TestSetters(t *testing.T) {
 }
 
 func TestNullConfigFile(t *testing.T) {
+	reset()
 	configFile := "nullconfig.json"
-	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+	if err := InitializeConfig(&configFile, nil, nil); err == nil {
 		t.Errorf("Did not detect null config file")
 	} else if err.(*ConfigError).Code() != ERR_NULL_CONFIG {
 		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_INVALID_FILE, err.(*ConfigError).Code())
@@ -67,8 +78,9 @@ func TestNullConfigFile(t *testing.T) {
 }
 
 func TestInvalidConfigData(t *testing.T) {
+	reset()
 	configFile := "invalidConfig.json"
-	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+	if err := InitializeConfig(&configFile, nil, nil); err == nil {
 		t.Errorf("Did not detect invalid config data")
 	} else if err.(*ConfigError).Code() != ERR_INVALID_CONFIG {
 		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_INVALID_FILE, err.(*ConfigError).Code())
@@ -79,8 +91,9 @@ func TestInvalidConfigData(t *testing.T) {
 
 
 func TestInvalidBootnode(t *testing.T) {
+	reset()
 	configFile := "invalidBootnode.json"
-	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+	if err := InitializeConfig(&configFile, nil, nil); err == nil {
 		t.Errorf("Did not detect invalid bootnode data")
 	} else if err.(*ConfigError).Code() != ERR_INVALID_BOOTNODE {
 		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_INVALID_BOOTNODE, err.(*ConfigError).Code())
@@ -90,8 +103,9 @@ func TestInvalidBootnode(t *testing.T) {
 }
 
 func TestMissingKeyFile(t *testing.T) {
+	reset()
 	configFile := "missingKeyfile.json"
-	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+	if err := InitializeConfig(&configFile, nil, nil); err == nil {
 		t.Errorf("Did not detect missing key filE")
 	} else if err.(*ConfigError).Code() != ERR_MISSING_PARAM {
 		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_MISSING_PARAM, err.(*ConfigError).Code())
@@ -101,8 +115,9 @@ func TestMissingKeyFile(t *testing.T) {
 }
 
 func TestInvalidKeyFile(t *testing.T) {
+	reset()
 	configFile := "invalidKeyfile.json"
-	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+	if err := InitializeConfig(&configFile, nil, nil); err == nil {
 		t.Errorf("Did not detect missing key filE")
 	} else if err.(*ConfigError).Code() != ERR_INVALID_SECRET_FILE {
 		fmt.Printf("Got error: %s\n", err.Error())
@@ -113,20 +128,23 @@ func TestInvalidKeyFile(t *testing.T) {
 }
 
 func TestNewKeyFile(t *testing.T) {
+	reset()
 	configFile := "newKeyfile.json"
-	config, err := NewConfig(&configFile, nil, nil)
+	err := InitializeConfig(&configFile, nil, nil)
 	if err != nil {
 		t.Errorf("Failed to create config '%s'", err.Error())
 		return
 	}
+	config, _ := Config()
 	if config.Key() == nil {
 		t.Errorf("key file not generated")
 	}
 }
 
 func TestMandatoryParamDataDir(t *testing.T) {
+	reset()
 	configFile := "noDataDirectory.json"
-	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+	if err := InitializeConfig(&configFile, nil, nil); err == nil {
 		t.Errorf("Did not detect missing data dir")
 		return
 	} else if err.(*ConfigError).Code() != ERR_MISSING_PARAM {
@@ -138,8 +156,9 @@ func TestMandatoryParamDataDir(t *testing.T) {
 }
 
 func TestMandatoryParamNodeName(t *testing.T) {
+	reset()
 	configFile := "noNodeName.json"
-	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+	if err := InitializeConfig(&configFile, nil, nil); err == nil {
 		t.Errorf("Did not detect missing node name")
 		return
 	} else if err.(*ConfigError).Code() != ERR_MISSING_PARAM {
@@ -151,8 +170,9 @@ func TestMandatoryParamNodeName(t *testing.T) {
 }
 
 func TestMandatoryParamNetworkId(t *testing.T) {
+	reset()
 	configFile := "noNetworkId.json"
-	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+	if err := InitializeConfig(&configFile, nil, nil); err == nil {
 		t.Errorf("Did not detect missing network ID")
 		return
 	} else if err.(*ConfigError).Code() != ERR_MISSING_PARAM {
@@ -164,12 +184,25 @@ func TestMandatoryParamNetworkId(t *testing.T) {
 }
 
 func TestInvalidConfigFile(t *testing.T) {
+	reset()
 	configFile := "invalidfile"
-	if _, err := NewConfig(&configFile, nil, nil); err == nil {
+	if err := InitializeConfig(&configFile, nil, nil); err == nil {
 		t.Errorf("Did not detect invalid config file")
 	} else if err.(*ConfigError).Code() != ERR_INVALID_FILE {
 		fmt.Printf("Got error: %s\n", err.Error())
 		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_INVALID_FILE, err.(*ConfigError).Code())
+	} else {
+		fmt.Printf("Got correct error: %s\n", err.Error())
+	}
+}
+
+func TestUnInitializedAccess(t *testing.T) {
+	reset()
+	if _, err := Config(); err == nil {
+		t.Errorf("Did not detect unintialized config")
+	} else if err.(*ConfigError).Code() != ERR_NOT_INITIALIZED {
+		fmt.Printf("Got error: %s\n", err.Error())
+		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_NOT_INITIALIZED, err.(*ConfigError).Code())
 	} else {
 		fmt.Printf("Got correct error: %s\n", err.Error())
 	}
