@@ -3,22 +3,20 @@ package main
 import (
 	"bufio"
 	"strconv"
-	"crypto/ecdsa"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/trust-net/go-trust-net/log"
+	"github.com/trust-net/go-trust-net/config"
 	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/protocol/pager"
 	"github.com/trust-net/go-trust-net/protocol/counter"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/satori/go.uuid"
 	"os"
 	"strings"
-	"math/big"
 )
 
 type KeyPair struct {
@@ -33,6 +31,7 @@ var counterMgr *counter.CountrProtocolManager
 var pagerMgr *pager.PagerProtocolManager
 
 func CLI(c chan int, srv *p2p.Server) {
+	config, _ := config.Config()
 	for {
 		fmt.Printf(cmdPrompt)
 		defer func() { c <- 1 }()
@@ -157,7 +156,12 @@ func CLI(c chan int, srv *p2p.Server) {
 					case "enode":
 						fmt.Printf("%s", srv.NodeInfo().Enode)
 					case "info":
-						fmt.Printf("%s", srv.NodeInfo())
+						fmt.Printf("#######################\n")
+						fmt.Printf("Node Name: %s\n", *config.NodeName())
+						fmt.Printf("Node ID  : %s\n", *config.Id())
+						fmt.Printf("Network  : %s\n", *config.NetworkId())
+//						fmt.Printf("%s", srv.NodeInfo())
+						fmt.Printf("#######################")
 					default:
 						fmt.Printf("Unknown Command: %s", cmd)
 						for wordScanner.Scan() {
@@ -174,82 +178,38 @@ func CLI(c chan int, srv *p2p.Server) {
 
 func main() {
 	port := flag.String("port", "30303", "port to listen on")
-	bootNode := flag.String("bootnode", "", "bootstrap node address")
-	name := flag.String("name", "", "name for the node")
-	fileName := flag.String("file", "", "name for the file with saved identity")
+	fileName := flag.String("file", "", "config file name")
 	natEnabled := flag.Bool("nat", false, "enable NAT translation")
 	flag.Parse()
-	fmt.Printf("Starting node, listening on %s...\n", *port)
-	if len(*name) == 0 {
-		*name = "Node@" + *port
+	if err := config.InitializeConfig(fileName, port, natEnabled); err != nil {
+		fmt.Printf("Failed to initialize configuration: %s\n", err)
+		return
 	}
+	config, _ := config.Config()
+	fmt.Printf("Starting node, listening on %s...\n", *config.Port())
 	log.SetLogLevel(log.DEBUG)
-	portS := ":" + (*port)
-	var nodekey *ecdsa.PrivateKey
-	if len(*fileName) == 0 {
-		nodekey, _ = crypto.GenerateKey()
-	} else {
-		if file, err := os.Open(*fileName); err == nil {
-			kp := make([]byte, 1024)
-			if count, err := file.Read(kp); err == nil && count <= 1024 {
-				kp = kp[:count]
-				// do not log this in production, key is secret data!!!
-				// log.AppLogger().Debug("Read %d bytes: %s", count, kp)
-				kpS := KeyPair{}
-				if err := json.Unmarshal(kp, &kpS); err != nil {
-					log.AppLogger().Error("JSON Unmarshal Error: %s", err)
-				} else {
-					nodekey = new(ecdsa.PrivateKey)
-					nodekey.PublicKey.Curve = crypto.S256()
-					nodekey.D = new(big.Int)
-					nodekey.D.SetBytes(kpS.D) 
-					nodekey.PublicKey.X = new(big.Int)
-					nodekey.PublicKey.X.SetBytes(kpS.X)
-					nodekey.PublicKey.Y = new(big.Int)
-					nodekey.PublicKey.Y.SetBytes(kpS.Y)
-				}
-			} else {
-				log.AppLogger().Error("File Read Error: %s", err)
-			}
-		} else {
-			log.AppLogger().Error("\nFile Open Error: %s\n", err)
-		}
-	}
-	nat := nat.Any()
-	if !*natEnabled {
-		nat = nil
-	}
 	
 	pagerMgr = pager.NewPagerProtocolManager(func(from, text string){
 		fmt.Printf("\n########## Msg From '%s' #########\n", from)
 		fmt.Printf("%s\n#######################\n%s", text, cmdPrompt)
 
 	})
-	counterMgr = counter.NewCountrProtocolManager(discover.PubkeyID(&nodekey.PublicKey).String())
+	counterMgr = counter.NewCountrProtocolManager(*config.Id())
 	protocols := make([]p2p.Protocol,0)
 	protocols = append(protocols, pagerMgr.Protocol())
 	protocols = append(protocols, counterMgr.Protocol())
-	
+	nat := nat.Any()
+	if !*config.NatEnabled() {
+		nat = nil
+	}
 	serverConfig := p2p.Config{
 		MaxPeers:   10,
-		PrivateKey: nodekey,
-		Name:       *name,
-		ListenAddr: portS,
+		PrivateKey: config.Key(),
+		Name:       *config.NodeName(),
+		ListenAddr: ":" + *config.Port(),
 		NAT: 		nat,
 		Protocols:  protocols,
-	}
-	bootNodes := make([]*discover.Node, 1)
-	if len(*bootNode) == 0 {
-		log.AppLogger().Info("Running without discovery")
-	} else {
-		log.AppLogger().Info("using '%s' for discovery", *bootNode)
-		if bootStrapNode, err := discover.ParseNode(*bootNode); err == nil {
-			bootNodes[0] = bootStrapNode
-			serverConfig.BootstrapNodes = bootNodes
-		} else {
-			log.AppLogger().Error("failed to parse boot node: %s", err)
-			return
-		}
+		BootstrapNodes: config.Bootnodes(),
 	}
 	srv := &p2p.Server{Config: serverConfig}
 	if err := srv.Start(); err != nil {
@@ -261,7 +221,6 @@ func main() {
 		go CLI(c, srv)
 		<-c
 		log.AppLogger().Info("done.")
-//		counterMgr.Stop()
 		srv.Stop()
 	}
 }

@@ -3,7 +3,6 @@ package config
 import (
     "testing"
     "fmt"
-	"github.com/ethereum/go-ethereum/p2p/discover"
 )
 
 // it seems go unit tests persist package scope artifacts, and hence need to
@@ -33,10 +32,12 @@ func TestHappyPathInitialization(t *testing.T) {
 	if *config.DataDir() != "tmp" {
 		t.Errorf("Unexpected default value for DataDir', Found '%s'", *config.DataDir())
 	}
-	expected := "3661376330396163373461343666633036613661326438623532316132613762333062613863613065333963656461356439363061626563306362356533396639643063643139393162326534386637326536313337323630333039353762366366386639613934303431306466643264313463643164353432333761346134"
-	hex := fmt.Sprintf("%x", discover.PubkeyID(&config.Key().PublicKey))
-	if hex != expected {
-		t.Errorf("Unexpected Key: Expected '%s' Found '%s'", expected, hex)
+//	expected := "3661376330396163373461343666633036613661326438623532316132613762333062613863613065333963656461356439363061626563306362356533396639643063643139393162326534386637326536313337323630333039353762366366386639613934303431306466643264313463643164353432333761346134"
+//	hex := fmt.Sprintf("%x", discover.PubkeyID(&config.Key().PublicKey))
+//	if hex != expected {
+	expected := "6a7c09ac74a46fc06a6a2d8b521a2a7b30ba8ca0e39ceda5d960abec0cb5e39f9d0cd1991b2e48f72e613726030957b6cf8f9a940410dfd2d14cd1d54237a4a4"
+	if expected != *config.Id() {
+		t.Errorf("Unexpected ID: Expected '%s' Found '%s'", expected, *config.Id())
 	}
 	if config.Port() != nil {
 		t.Errorf("Unexpected default value for Port', Found '%s'", config.Port())

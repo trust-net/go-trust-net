@@ -20,6 +20,7 @@ type config struct{
 	key *ecdsa.PrivateKey
 	port *string
 	natEnabled *bool
+	id string
 }
 
 type configParams struct {
@@ -48,6 +49,10 @@ func Config() (*config, error) {
 
 func (c *config) Bootnodes() []*discover.Node {
 	return c.bootnodes
+}
+
+func (c *config) Id() *string {
+	return &c.id
 }
 
 func (c *config) NodeName() *string {
@@ -79,11 +84,18 @@ func InitializeConfig(configFile *string, port *string, natEnabled *bool) error 
 	if c != nil {
 		return nil
 	}
+	// get lock
 	lock.Lock()
 	defer lock.Unlock()
+	// check again, incase got initialized while waiting for lock
 	if c != nil {
 		return nil
 	}
+	// validate argument
+	if configFile == nil || len(*configFile) == 0 {
+		return NewConfigError(ERR_MISSING_PARAM, "config file not specified")
+	}
+	
 	// open the config file
 	if file, err := os.Open(*configFile); err == nil {
 		data := make([]byte, 1024)
@@ -172,6 +184,7 @@ func InitializeConfig(configFile *string, port *string, natEnabled *bool) error 
 					}
 					config.key = nodekey
 				}
+				config.id = discover.PubkeyID(&config.Key().PublicKey).String()
 				c = &config
 				return nil
 			}
