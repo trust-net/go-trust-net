@@ -4,6 +4,7 @@ import (
 //	"math/big"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/core"
+	"github.com/trust-net/go-trust-net/core/chain"
 	"github.com/trust-net/go-trust-net/db"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/trust-net/go-trust-net/protocol"
@@ -37,7 +38,7 @@ type CountrProtocolManager struct {
 	protocol.ManagerBase
 	logger log.Logger
 	count int64
-	chain *core.BlockChainInMem
+	chain *chain.BlockChainInMem
 	genesis *core.SimpleBlock
 	miner *core.SimpleNodeInfo
 }
@@ -50,7 +51,7 @@ func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 		genesis: core.NewSimpleBlock(core.BytesToByte64(nil), genesisTimeStamp, core.NewSimpleNodeInfo("")),
 	}
 	mgr.genesis.ComputeHash()
-	mgr.chain = core.NewBlockChainInMem(mgr.genesis)
+	mgr.chain = chain.NewBlockChainInMem(mgr.genesis)
 	mgr.SetDb(db.NewPeerSetDbInMemory())
 	mgr.logger = log.NewLogger(mgr)
 	mgr.logger.Debug("Created new instance of counter protocol manager")

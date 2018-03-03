@@ -1,14 +1,12 @@
-package core
+package chain
 
 import (
 	"sync"
 	"github.com/trust-net/go-trust-net/log"
+	"github.com/trust-net/go-trust-net/core"
+//	"github.com/trust-net/go-trust-net/db"
 
 )
-
-type DAG interface {
-	
-}
 
 const (
 	maxBlocks = 100
@@ -16,10 +14,10 @@ const (
 
 type BlockChainInMem struct {
 	genesis *BlockNode
-	leaves []*BlockNode // do we need this?
-	td	*Byte8
+	tip *BlockNode
+	td	*core.Byte8
 	depth uint64
-	nodes map[Byte64]*BlockNode
+	nodes map[core.Byte64]*BlockNode
 	lock sync.RWMutex
 	logger log.Logger
 }
@@ -29,17 +27,16 @@ type BlockChainInMem struct {
 //
 // this way, an exactly same genesis block can be computed deterministically from a config
 // on all instances of this blockchain
-func NewBlockChainInMem(genesis Block) *BlockChainInMem {
+func NewBlockChainInMem(genesis core.Block) *BlockChainInMem {
 	chain := &BlockChainInMem{
 		genesis: NewBlockNode(genesis, 0),
 		depth: 0,
-		td: BytesToByte8(genesis.Timestamp().Bytes()),
-		leaves: make([]*BlockNode, 1), // do we need this?
-		nodes: make(map[Byte64]*BlockNode),
+		td: core.BytesToByte8(genesis.Timestamp().Bytes()),
+		nodes: make(map[core.Byte64]*BlockNode),
 	}
 	chain.nodes[*genesis.Hash()] = chain.genesis
 	chain.genesis.SetMainList(true)
-	chain.leaves[0]=chain.genesis
+	chain.tip=chain.genesis
 	chain.logger = log.NewLogger(*chain)
 	chain.logger.Debug("Created new instance of in memory block chain DAG")
 	return chain
@@ -49,44 +46,44 @@ func (chain *BlockChainInMem) Depth() uint64 {
 	return chain.depth
 }
 
-func (chain *BlockChainInMem) TD() *Byte8 {
+func (chain *BlockChainInMem) TD() *core.Byte8 {
 	return chain.td
 }
 
 func (chain *BlockChainInMem) Tip() *BlockNode {
-	return chain.leaves[0]
+	return chain.tip
 }
 
 func (chain *BlockChainInMem) Genesis() *BlockNode {
 	return chain.genesis
 }
 
-func (chain *BlockChainInMem) BlockNode(hash *Byte64) (*BlockNode, bool) {
+func (chain *BlockChainInMem) BlockNode(hash *core.Byte64) (*BlockNode, bool) {
 	chain.lock.RLock()
 	defer chain.lock.RUnlock()
 	node, found := chain.nodes[*hash]
 	return node, found
 }
 
-func (chain *BlockChainInMem) AddBlockNode(block Block) error {
+func (chain *BlockChainInMem) AddBlockNode(block core.Block) error {
 	if block == nil {
 		chain.logger.Error("attempt to add nil block!!!")
-		return NewCoreError(ERR_INVALID_BLOCK, "nil block")
+		return core.NewCoreError(core.ERR_INVALID_BLOCK, "nil block")
 	}
 	// make sure that block has computed hash
 	if block.Hash() == nil {
 		chain.logger.Error("attempt to add block without hash computed")
-		return NewCoreError(ERR_INVALID_HASH, "block does not have hash computed")
+		return core.NewCoreError(core.ERR_INVALID_HASH, "block does not have hash computed")
 	}
 	chain.lock.Lock()
 	defer chain.lock.Unlock()
 	if _, found := chain.nodes[*block.Hash()]; found {
 		chain.logger.Error("attempt to add duplicate block!!!")
-		return NewCoreError(ERR_DUPLICATE_BLOCK, "duplicate block")
+		return core.NewCoreError(core.ERR_DUPLICATE_BLOCK, "duplicate block")
 	}
 	if parent, ok := chain.nodes[*block.ParentHash()]; !ok {
 		chain.logger.Error("attempt to add an orphan block!!!")
-		return NewCoreError(ERR_ORPHAN_BLOCK, "orphan block")
+		return core.NewCoreError(core.ERR_ORPHAN_BLOCK, "orphan block")
 	} else {
 		// add the new child node into our data store
 		child := NewBlockNode(block, parent.Depth()+1)
@@ -101,7 +98,7 @@ func (chain *BlockChainInMem) AddBlockNode(block Block) error {
 			// move depth and tip of blockchain
 			*chain.td = *block.Timestamp()
 			chain.depth = child.Depth()
-			chain.leaves[0] = child
+			chain.tip = child
 			// walk up the ancestor list setting them up as main list nodes
 			// until find the first ancestor that is already on main list
 			child.SetMainList(true)
@@ -134,13 +131,13 @@ func (chain *BlockChainInMem) findMainListChild(parent, skipChild *BlockNode) *B
 	return nil
 }
 
-func (chain *BlockChainInMem) Blocks(parent *Byte64, max uint64) []Block {
+func (chain *BlockChainInMem) Blocks(parent *core.Byte64, max uint64) []core.Block {
 	chain.lock.RLock()
 	defer chain.lock.RUnlock()
 	if max > maxBlocks {
 		max = maxBlocks
 	}
-	blocks := make([]Block, 0, max)
+	blocks := make([]core.Block, 0, max)
 	// simple traversal down the main block chain list
 	chain.lock.RLock()
 	defer chain.lock.RUnlock()

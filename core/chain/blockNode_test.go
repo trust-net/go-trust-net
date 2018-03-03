@@ -1,16 +1,17 @@
-package core
+package chain
 
 import (
     "testing"
+	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/common"
 )
 
-var child1 = BytesToByte64([]byte("child1"))
-var child2 = BytesToByte64([]byte("child2"))
+var child1 = core.BytesToByte64([]byte("child1"))
+var child2 = core.BytesToByte64([]byte("child2"))
 
 func TestNewBlockNode(t *testing.T) {
-	myNode := NewSimpleNodeInfo("test node")
-	block := NewSimpleBlock(BytesToByte64([]byte("previous")), 0, myNode)
+	myNode := core.NewSimpleNodeInfo("test node")
+	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 0, myNode)
 	node := NewBlockNode(block, 11)
 	if node.Hash() != block.Hash() {
 		t.Errorf("Hash: Expected: %d, Actual: %d", block.Hash(), node.Hash())
@@ -33,8 +34,8 @@ func TestNewBlockNode(t *testing.T) {
 }
 
 func TestSetIsMain(t *testing.T) {
-	myNode := NewSimpleNodeInfo("test node")
-	block := NewSimpleBlock(BytesToByte64([]byte("previous")), 0, myNode)
+	myNode := core.NewSimpleNodeInfo("test node")
+	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 0, myNode)
 	node := NewBlockNode(block, 11)
 	if node.IsMainList() {
 		t.Errorf("Is main list: Expected: %d, Actual: %d", false, node.IsMainList())
@@ -46,8 +47,8 @@ func TestSetIsMain(t *testing.T) {
 }
 
 func TestAddChild(t *testing.T) {
-	myNode := NewSimpleNodeInfo("test node")
-	block := NewSimpleBlock(BytesToByte64([]byte("previous")), 0, myNode)
+	myNode := core.NewSimpleNodeInfo("test node")
+	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 0, myNode)
 	node := NewBlockNode(block, 11)
 	node.AddChild(child1)
 	node.AddChild(child2)
@@ -69,8 +70,8 @@ func (e *testError) Error() string {
 }
 
 func TestLock(t *testing.T) {
-	myNode := NewSimpleNodeInfo("test node")
-	block := NewSimpleBlock(BytesToByte64([]byte("previous")), 0, myNode)
+	myNode := core.NewSimpleNodeInfo("test node")
+	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 0, myNode)
 	node := NewBlockNode(block, 11)
 	node.Lock()
 	defer node.Unlock()

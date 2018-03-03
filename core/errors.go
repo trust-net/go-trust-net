@@ -9,6 +9,7 @@ const (
 	ERR_ORPHAN_BLOCK = 0x02
 	ERR_INVALID_HASH = 0x03
 	ERR_INVALID_BLOCK = 0x04
+	ERR_DB_UNINITIALIZED = 0x05
 )
 
 type CoreError struct {

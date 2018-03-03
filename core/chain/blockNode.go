@@ -1,27 +1,28 @@
-package core
+package chain
 
 import (
 	"sync"
+	"github.com/trust-net/go-trust-net/core"
 )
 
 type BlockNode struct {
-	hash *Byte64
-	parent *Byte64
+	hash *core.Byte64
+	parent *core.Byte64
 	depth uint64
 	isMainList bool
-	children	 []*Byte64
-	block Block
+	children	 []*core.Byte64
+	block core.Block
 	lock sync.RWMutex
 }
 
-func NewBlockNode(block Block, depth uint64) *BlockNode {
+func NewBlockNode(block core.Block, depth uint64) *BlockNode {
 	return &BlockNode{
 		hash: block.Hash(),
 		parent: block.ParentHash(),
 		block: block,
 		depth: depth,
 		isMainList: false,
-		children: make([]*Byte64,0),
+		children: make([]*core.Byte64,0),
 	}
 }
 
@@ -41,15 +42,15 @@ func (bn *BlockNode) Unlock() {
 	bn.lock.Unlock()
 }
 
-func (bn *BlockNode) Block() Block {
+func (bn *BlockNode) Block() core.Block {
 	return bn.block
 }
 
-func (bn *BlockNode) Hash() *Byte64 {
+func (bn *BlockNode) Hash() *core.Byte64 {
 	return bn.hash
 }
 
-func (bn *BlockNode) Parent() *Byte64 {
+func (bn *BlockNode) Parent() *core.Byte64 {
 	return bn.parent
 }
 
@@ -57,11 +58,11 @@ func (bn *BlockNode) Depth() uint64 {
 	return bn.depth
 }
 
-func (bn *BlockNode) Children() []*Byte64 {
+func (bn *BlockNode) Children() []*core.Byte64 {
 	return bn.children
 }
 
-func (bn *BlockNode) AddChild(childHash *Byte64) int {
+func (bn *BlockNode) AddChild(childHash *core.Byte64) int {
 	bn.children = append(bn.children, childHash)
 	return len(bn.children)
 }
