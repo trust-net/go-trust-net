@@ -19,6 +19,9 @@ type ProtocolManager interface {
 	
 	// get reference to protocol manager's DB
 	Db() db.PeerSetDb
+	
+	// Shutdown and cleanup
+	Shutdown()
 }
 
 // protocol errors

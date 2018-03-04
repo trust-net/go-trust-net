@@ -3,7 +3,6 @@ package chain
 import (
     "testing"
 	"github.com/trust-net/go-trust-net/core"
-	"github.com/trust-net/go-trust-net/common"
 )
 
 var child1 = core.BytesToByte64([]byte("child1"))
@@ -12,8 +11,9 @@ var child2 = core.BytesToByte64([]byte("child2"))
 func TestNewBlockNode(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 0, myNode)
+	block.ComputeHash()
 	node := NewBlockNode(block, 11)
-	if node.Hash() != block.Hash() {
+	if *node.Hash() != *block.Hash() {
 		t.Errorf("Hash: Expected: %d, Actual: %d", block.Hash(), node.Hash())
 	}
 	if node.Parent() != block.ParentHash() {
@@ -28,14 +28,15 @@ func TestNewBlockNode(t *testing.T) {
 	if node.IsMainList() {
 		t.Errorf("Is main list: Expected: %d, Actual: %d", false, node.IsMainList())
 	}
-	if node.Block() != block {
-		t.Errorf("Block: Expected: %d, Actual: %d", block, node.Block())
+	if *node.Block() != *block.Hash() {
+		t.Errorf("Block: Expected: %d, Actual: %d", block.Hash(), node.Block())
 	}
 }
 
 func TestSetIsMain(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 0, myNode)
+	block.ComputeHash()
 	node := NewBlockNode(block, 11)
 	if node.IsMainList() {
 		t.Errorf("Is main list: Expected: %d, Actual: %d", false, node.IsMainList())
@@ -49,6 +50,7 @@ func TestSetIsMain(t *testing.T) {
 func TestAddChild(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 0, myNode)
+	block.ComputeHash()
 	node := NewBlockNode(block, 11)
 	node.AddChild(child1)
 	node.AddChild(child2)
@@ -67,19 +69,4 @@ type testError struct {}
 
 func (e *testError) Error() string {
 	return ""
-}
-
-func TestLock(t *testing.T) {
-	myNode := core.NewSimpleNodeInfo("test node")
-	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 0, myNode)
-	node := NewBlockNode(block, 11)
-	node.Lock()
-	defer node.Unlock()
-	if err := common.RunTimeBound(2, func() error {
-			node.Lock()
-			defer node.Unlock()
-			return nil
-		}, &testError{}); err == nil {
-		t.Errorf("did not lock")
-	}
 }

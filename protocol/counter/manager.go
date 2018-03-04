@@ -50,16 +50,29 @@ func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 		miner: core.NewSimpleNodeInfo(miner),
 		genesis: core.NewSimpleBlock(core.BytesToByte64(nil), genesisTimeStamp, core.NewSimpleNodeInfo("")),
 	}
-	mgr.genesis.ComputeHash()
-	mgr.chain = chain.NewBlockChainInMem(mgr.genesis)
-	mgr.SetDb(db.NewPeerSetDbInMemory())
 	mgr.logger = log.NewLogger(mgr)
 	mgr.logger.Debug("Created new instance of counter protocol manager")
+	mgr.genesis.ComputeHash()
+	chainDb, _ := db.NewDatabaseInMem()  
+	if chain, err := chain.NewBlockChainInMem(mgr.genesis, chainDb); err != nil {
+		mgr.logger.Error("Failed to create blockchain: %s", err.Error())
+		return nil
+	} else {
+		mgr.chain = chain
+	}
+	mgr.SetDb(db.NewPeerSetDbInMemory())
 	return &mgr
 }
 
 func (mgr *CountrProtocolManager) Countr() int64 {
 	return mgr.count
+}
+
+func (mgr *CountrProtocolManager) Shutdown() {
+	if err := mgr.chain.Shutdown(); err != nil {
+		mgr.logger.Error("Failed to cleanly shutdown chain DB: %s", err.Error())
+	}
+	mgr.logger.Debug("shutting down counter protocol manager")
 }
 
 func (mgr *CountrProtocolManager) delta(opCode *core.Byte8) bool {
@@ -300,8 +313,9 @@ func (mgr *CountrProtocolManager) handleGetBlocksRequestMsg(msg p2p.Msg, to *pro
 	i := 0
 	for _, hash := range hashes {
 		if blockNode, found := mgr.chain.BlockNode(&hash); found {
-			blocks[i] = core.NewBlockSpecFromBlock(blockNode.Block())
-			i++
+			if blocks[i], found = mgr.chain.BlockSpec(blockNode.Block()); found {
+				i++
+			}
 		}
 	}
 	if i < 1 {
@@ -341,7 +355,10 @@ func (mgr *CountrProtocolManager) handleGetBlocksResponseMsg(msg p2p.Msg, from *
 			from.GetBlockHashesChan <- protocol.CHAN_ERROR
 			return err
 		} else {
-			mgr.count += delta
+			// only update counter if it was not a duplicate block
+			if err == nil {
+				mgr.count += delta
+			}
 			from.LastHash = hash
 		}
 	}
@@ -405,13 +422,7 @@ func (mgr *CountrProtocolManager) handleGetBlockHashesResponseMsg(msg p2p.Msg, f
 		return protocol.NewProtocolError(protocol.ErrorSyncFailed, err.Error())
 	}
 	
-//	// while new blocks are being fetched, we can move to fetching next batch of hashes
-//	from.GetBlockHashesChan <- protocol.CHAN_NEXT
 	return nil
-	
-//	mgr.logger.Info("Need to implement sync response handler!")
-//	from.GetBlockHashesResponse <- protocol.CHAN_ABORT
-//	return protocol.NewProtocolError(protocol.ErrorNotImplemented, "sync protocol not implemented")
 }
 
 func (mgr *CountrProtocolManager) Protocol() p2p.Protocol {

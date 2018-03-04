@@ -48,6 +48,10 @@ func NewPagerProtocolManager(callback PageHandler) *PagerProtocolManager {
 	return &mgr
 }
 
+func (mgr *PagerProtocolManager) Shutdown() {
+	mgr.logger.Debug("shutting down pager protocol manager")
+}
+
 func (mgr *PagerProtocolManager) Broadcast(msg BroadcastTextMsg) int {
 	count := 0
 	for _, node := range mgr.Db().PeerNodesWithMsgNotSeen(msg.MsgId) {
@@ -105,8 +109,6 @@ func (mgr *PagerProtocolManager) Protocol() p2p.Protocol {
 					defer func() {
 						mgr.logger.Debug("Disconnecting from '%s'", peer.Name())
 						mgr.UnregisterPeer(node)
-//						mgr.Db().UnRegisterPeerNodeForId(peer.ID().String())
-//						mgr.DecrPeer()
 					}()
 				}
 				
