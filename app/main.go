@@ -194,7 +194,9 @@ func main() {
 		fmt.Printf("%s\n#######################\n%s", text, cmdPrompt)
 
 	})
+	defer pagerMgr.Shutdown()
 	counterMgr = counter.NewCountrProtocolManager(*config.Id())
+	defer counterMgr.Shutdown()
 	protocols := make([]p2p.Protocol,0)
 	protocols = append(protocols, pagerMgr.Protocol())
 	protocols = append(protocols, counterMgr.Protocol())

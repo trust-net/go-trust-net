@@ -28,3 +28,26 @@ func TestRunTimeBoundWithinTime(t *testing.T) {
 		t.Errorf("did not timeout")
 	}
 }
+
+type TestEntity struct {
+	Field1 string
+	Field2 int64
+}
+
+func TestSerialize(t *testing.T) {
+	entity := TestEntity {"test string", 0x0045}
+	if _, err := Serialize(entity); err != nil {
+		t.Errorf("failed to serialize entity: %s", err)
+	}
+}
+
+func TestDeseriealize(t *testing.T) {
+	data, _ := Serialize(&TestEntity {"test string", 0x0045})
+	var entity TestEntity
+	if err := Deserialize(data, &entity); err != nil {
+		t.Errorf("failed to deserialize entity: %s", err)
+	} else if entity.Field1 != "test string" || entity.Field2 != 0x0045 {
+		t.Errorf("Incorrect values: %s\n", entity)
+	}
+}
+

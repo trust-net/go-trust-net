@@ -9,6 +9,7 @@ import (
 //	"encoding/gob"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/core"
+	"github.com/trust-net/go-trust-net/common"
 	"github.com/trust-net/go-trust-net/db"
 )
 
@@ -22,7 +23,7 @@ func TestBlockNodeEncode(t *testing.T) {
 	now := uint64(time.Now().UnixNano())
 	genesis := testGenesisBlock(now)
 	node := NewBlockNode(genesis, 0)
-	if data, err := encode(node); err != nil {
+	if data, err := common.Serialize(node); err != nil {
 		t.Errorf("failed to encode block node: %s", err)
 	} else {
 		fmt.Printf("Encoded: %s\n", data[:12])
@@ -32,9 +33,9 @@ func TestBlockNodeEncode(t *testing.T) {
 func TestBlockNodeDecode(t *testing.T) {
 	now := uint64(time.Now().UnixNano())
 	block := testGenesisBlock(now)
-	data, _ := encode(NewBlockNode(block, 12))
+	data, _ := common.Serialize(NewBlockNode(block, 12))
 	var node BlockNode
-	if err := decode(data, &node); err != nil {
+	if err := common.Deserialize(data, &node); err != nil {
 		t.Errorf("failed to decode block node: %s", err)
 	} else {
 		fmt.Printf("Decoded: %d\n", node.Depth())
@@ -282,7 +283,7 @@ func TestBlockChainInMemRebalance(t *testing.T) {
 	child2.ComputeHash()
 	chain.AddBlockNode(child2)
 	// verify that blockchain points to 1st child as tip
-	if chain.Tip().Hash() != child1.Hash() {
+	if *chain.Tip().Hash() != *child1.Hash() {
 		t.Errorf("chain tip incorrect: Expected '%d' Found '%d'", child1, chain.Tip())
 	}
 	bn,_ := chain.BlockNode(child1.Hash())
@@ -299,7 +300,7 @@ func TestBlockChainInMemRebalance(t *testing.T) {
 	child3.ComputeHash()
 	chain.AddBlockNode(child3)
 	// verify that blockchain points to 3rd child as tip
-	if chain.Tip().Hash() != child3.Hash() {
+	if *chain.Tip().Hash() != *child3.Hash() {
 		t.Errorf("chain tip incorrect: Expected '%d' Found '%d'", child3, chain.Tip())
 	}
 	// confirm that main list flags have been rebalanced

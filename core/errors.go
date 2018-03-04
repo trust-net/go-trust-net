@@ -10,6 +10,7 @@ const (
 	ERR_INVALID_HASH = 0x03
 	ERR_INVALID_BLOCK = 0x04
 	ERR_DB_UNINITIALIZED = 0x05
+	ERR_DB_CORRUPTED = 0x06
 )
 
 type CoreError struct {

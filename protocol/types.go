@@ -4,6 +4,10 @@ import (
 	"fmt"
 )
 
+const (
+	ERR_WORLD_STATE_UPDATE_FAILURE = 0x01
+)
+
 type ProtocolError struct {
 	msg string
 	code int

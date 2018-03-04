@@ -3,9 +3,9 @@ package chain
 import (
 	"sync"
 	"encoding/gob"
-    "bytes"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/core"
+	"github.com/trust-net/go-trust-net/common"
 	"github.com/trust-net/go-trust-net/db"
 
 )
@@ -16,6 +16,7 @@ const (
 
 var tableBlockNode = []byte("BlockNode-")
 var tableBlockSpec = []byte("BlockSpec-")
+var dagTip = []byte("ChainState-DagTip")
 
 func init() {
 	gob.Register(&BlockNode{})
@@ -28,7 +29,7 @@ func tableKey(prefix []byte, key *core.Byte64) []byte {
 
 type BlockChainInMem struct {
 	genesis *BlockNode
-	tip *BlockNode
+	tip *core.Byte64
 	td	*core.Byte8
 	depth uint64
 	db db.Database
@@ -48,16 +49,40 @@ func NewBlockChainInMem(genesis core.Block, db db.Database) (*BlockChainInMem, e
 		td: core.BytesToByte8(genesis.Timestamp().Bytes()),
 		db: db,
 	}
-	chain.tip = chain.genesis
-	chain.logger = log.NewLogger(*chain)
-	chain.logger.Debug("Created new instance of in memory block chain DAG")
 	chain.genesis.SetMainList(true)
-	if err := chain.SaveBlock(genesis); err != nil {
-		return nil, core.NewCoreError(core.ERR_DB_UNINITIALIZED, err.Error())
+	chain.logger = log.NewLogger(*chain)
+	// initialize tip from DB, if available
+	if data, err := chain.db.Get(dagTip); err != nil {
+		chain.logger.Debug("No DAG tip in DB, using genesis as tip")
+		chain.tip = chain.genesis.Hash()
+		// save the tip in DB
+		if err := chain.db.Put(dagTip, chain.tip.Bytes()); err != nil {
+			return nil, core.NewCoreError(core.ERR_DB_UNINITIALIZED, err.Error())
+		}
+		// save the genesis block in DB
+		if err := chain.SaveBlock(genesis); err != nil {
+			return nil, core.NewCoreError(core.ERR_DB_UNINITIALIZED, err.Error())
+		}
+		if err := chain.SaveBlockNode(chain.genesis); err != nil {
+			return nil, core.NewCoreError(core.ERR_DB_UNINITIALIZED, err.Error())
+		}
+	} else {
+		chain.tip = core.BytesToByte64(data)
+		chain.logger.Debug("Initializing DAG tip from DB: '%x'", *chain.tip)
+		// find depth from tip
+		if node, found := chain.BlockNode(chain.tip); !found {
+			return nil, core.NewCoreError(core.ERR_DB_CORRUPTED, "cannot find block node for the tip")
+		} else {
+			chain.depth = node.Depth()
+		}
+		// find TD from tip
+		if block, found := chain.Block(chain.tip); !found {
+			return nil, core.NewCoreError(core.ERR_DB_CORRUPTED, "cannot find block for the tip")
+		} else {
+			chain.td = core.BytesToByte8(block.Timestamp().Bytes())
+		}
 	}
-	if err := chain.SaveBlockNode(chain.genesis); err != nil {
-		return nil, core.NewCoreError(core.ERR_DB_UNINITIALIZED, err.Error())
-	}
+	chain.logger.Debug("Created new instance of in memory block chain DAG")
 	return chain, nil
 }
 
@@ -74,28 +99,22 @@ func (chain *BlockChainInMem) TD() *core.Byte8 {
 }
 
 func (chain *BlockChainInMem) Tip() *BlockNode {
-	return chain.tip
+	// get the blocknode for the tip
+	if data, err := chain.db.Get(tableKey(tableBlockNode, chain.tip)); err != nil {
+		chain.logger.Error("Did not find tip block node in DB: %s", err.Error())
+		return nil
+	} else {
+		var node BlockNode
+		if err := common.Deserialize(data, &node); err != nil {
+			chain.logger.Error("failed to decode tip data from DB: %s", err.Error())
+			return nil
+		}
+		return &node
+	}
 }
 
 func (chain *BlockChainInMem) Genesis() *BlockNode {
 	return chain.genesis
-}
-
-func encode(entity interface{}) ([]byte, error) {
-	b := bytes.Buffer{}
-    e := gob.NewEncoder(&b)
-    if err := e.Encode(entity); err != nil {
-	    	return []byte{}, err
-    } else {
-	    	return b.Bytes(), nil
-    }
-}
-
-func decode(data []byte, entity interface{}) error {
-	b := bytes.Buffer{}
-    b.Write(data)
-    d := gob.NewDecoder(&b)
-    return d.Decode(entity)
 }
 
 func (chain *BlockChainInMem) BlockNode(hash *core.Byte64) (*BlockNode, bool) {
@@ -104,7 +123,7 @@ func (chain *BlockChainInMem) BlockNode(hash *core.Byte64) (*BlockNode, bool) {
 		return nil, false
 	} else {
 		var node BlockNode
-		if err := decode(data, &node); err != nil {
+		if err := common.Deserialize(data, &node); err != nil {
 			chain.logger.Error("failed to decode data from DB: %s", err.Error())
 			return nil, false
 		}
@@ -118,7 +137,7 @@ func (chain *BlockChainInMem) Block(hash *core.Byte64) (core.Block, bool) {
 		return nil, false
 	} else {
 		var spec core.BlockSpec
-		if err := decode(data, &spec); err != nil {
+		if err := common.Deserialize(data, &spec); err != nil {
 			chain.logger.Error("failed to decode data from DB: %s", err.Error())
 			return nil, false
 		}
@@ -132,7 +151,7 @@ func (chain *BlockChainInMem) BlockSpec(hash *core.Byte64) (*core.BlockSpec, boo
 		return nil, false
 	} else {
 		var spec core.BlockSpec
-		if err := decode(data, &spec); err != nil {
+		if err := common.Deserialize(data, &spec); err != nil {
 			chain.logger.Error("failed to decode data from DB: %s", err.Error())
 			return nil, false
 		}
@@ -142,7 +161,7 @@ func (chain *BlockChainInMem) BlockSpec(hash *core.Byte64) (*core.BlockSpec, boo
 
 // persist a blocknode into DB
 func (chain *BlockChainInMem) SaveBlockNode(node *BlockNode) error {
-	if data, err := encode(node); err == nil {
+	if data, err := common.Serialize(node); err == nil {
 		return chain.db.Put(tableKey(tableBlockNode, node.Hash()), data)
 	} else {
 		return err
@@ -152,7 +171,7 @@ func (chain *BlockChainInMem) SaveBlockNode(node *BlockNode) error {
 
 // persist a block into DB
 func (chain *BlockChainInMem) SaveBlock(block core.Block) error {
-	if data, err := encode(core.NewBlockSpecFromBlock(block)); err == nil {
+	if data, err := common.Serialize(core.NewBlockSpecFromBlock(block)); err == nil {
 		return chain.db.Put(tableKey(tableBlockSpec, block.Hash()), data)
 	} else {
 		return err
@@ -193,7 +212,12 @@ func (chain *BlockChainInMem) AddBlockNode(block core.Block) error {
 			// move depth and tip of blockchain
 			*chain.td = *block.Timestamp()
 			chain.depth = child.Depth()
-			chain.tip = child
+			chain.tip = child.Hash()
+			// update the tip in DB
+			if err := chain.db.Put(dagTip, chain.tip.Bytes()); err != nil {
+				return core.NewCoreError(core.ERR_DB_CORRUPTED, "failed to update tip in DB")
+			}
+			
 			// walk up the ancestor list setting them up as main list nodes
 			// until find the first ancestor that is already on main list
 			child.SetMainList(true)

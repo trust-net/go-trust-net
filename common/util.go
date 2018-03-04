@@ -2,6 +2,8 @@ package common
 
 import (
 	"time"
+    "bytes"
+	"encoding/gob"
 )
 
 func RunTimeBound(sec time.Duration, method func () error, timeoutError error) error {
@@ -24,4 +26,22 @@ func RunTimeBound(sec time.Duration, method func () error, timeoutError error) e
 			err = timeoutError
 	}
 	return err
+}
+
+
+func Serialize(entity interface{}) ([]byte, error) {
+	b := bytes.Buffer{}
+    e := gob.NewEncoder(&b)
+    if err := e.Encode(entity); err != nil {
+	    	return []byte{}, err
+    } else {
+	    	return b.Bytes(), nil
+    }
+}
+
+func Deserialize(data []byte, entity interface{}) error {
+	b := bytes.Buffer{}
+    b.Write(data)
+    d := gob.NewDecoder(&b)
+    return d.Decode(entity)
 }
