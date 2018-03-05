@@ -6,7 +6,7 @@ TAG="poc-countr"
 DOCKER="docker"
 
 if [ $# -ne 2 ]; then
-	echo "usage: $0 <port number> <boot node>"
+	echo "usage: $0 <port number> <config file>"
 	exit 1
 fi
 
@@ -16,12 +16,14 @@ if [[ "$($DOCKER images $TAG:latest -q)" == "" ]]; then
 	exit 1
 fi
 
-# the bootnode address should either be publicly reachable peer, or a peer running
-# on same local subnet as the container (e.g. same bridge network)
-# e.g. enode://<pub key>@172.17.0.2:30303, or
-# e.g. enode://<pub key>@192.168.1.114:30303
+### mount points for data directories
+DATA_DIR="/tmp/data"
+mkdir -p $DATA_DIR
+### copy the config file for this node into mount point
+cp $2 $DATA_DIR/node-$1.json
 
 docker run -it --rm --publish $1:30303 \
 	--name node-$1 \
+	--mount type=bind,source="$DATA_DIR",target=/tmp \
 	--entrypoint /go/bin/app \
-	$TAG -name Node@$1 -bootnode $2
+	$TAG -file /tmp/node-$1.json

@@ -4,6 +4,7 @@ RUN rm -rf /go/src/github.com/trust-net/go-trust-net
 
 # copy current source codebase
 ADD . /go/src/github.com/trust-net/go-trust-net
+ADD mainConfig.json /tmp
 
 # install dependencies on base image (e.g. when using golang)
 RUN go get github.com/ethereum/go-ethereum
@@ -14,6 +15,6 @@ RUN go get github.com/satori/go.uuid
 RUN go clean -i -x
 RUN go install github.com/trust-net/go-trust-net/app
 
-ENTRYPOINT /go/bin/app
+CMD ["/go/bin/app" "-f" "/tmp/mainConfig.json" "-p" "30303"]
 
 EXPOSE 30303
