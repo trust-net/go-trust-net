@@ -313,6 +313,8 @@ func (mgr *CountrProtocolManager) handleGetBlockHashesRewindMsg(msg p2p.Msg, fro
 			return protocol.NewProtocolError(protocol.ErrorInvalidResponse, "rewind hash does not match genesis")
 		}
 		mgr.state.Countr = 0
+		mgr.saveState()
+		mgr.chain.Flush()
 		from.GetBlockHashesChan <- protocol.CHAN_RETRY
 	}
 	return nil

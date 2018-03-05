@@ -146,6 +146,46 @@ func TestBlockChainInMemAddNodeTdUpdate(t *testing.T) {
 	}
 }
 
+func TestBlockChainFlush(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	genesis := testGenesisBlock(0x20000)
+	chain, _ := NewBlockChainInMem(genesis, db)
+	myNode := core.NewSimpleNodeInfo("test node")
+	// now add descendents with 6 blocks after the genesis
+	list := makeBlocks(6, genesis.Hash(), myNode)
+	for i, child := range(list) {
+		if err := chain.AddBlockNode(child); err != nil {
+			t.Errorf("chain failed to add block #%d: %s", i, err)
+		}
+	}
+	// reset/flush the chain
+	if err := chain.Flush(); err != nil {
+		t.Errorf("chain failed to flush: %s", err)
+	}
+	if *chain.Tip().Hash() != *genesis.Hash() {
+		t.Errorf("chain flush did not reset tip: Expected '%x', Found '%x'", genesis.Hash(), chain.Tip())
+	}
+	if chain.Depth() != 0 {
+		t.Errorf("chain flush did not reset depth: Expected '%x', Found '%x'", 0, chain.Depth())
+	}
+	if *chain.TD() != *genesis.Timestamp() {
+		t.Errorf("chain flush did not reset TD: Expected '%x', Found '%x'", genesis.Timestamp(), chain.TD())
+	}
+	if child := chain.findMainListChild(chain.genesis, nil); child != nil {
+		t.Errorf("chain flush did not reset main list: Expected '%x', Found '%x'", nil, child.Hash())
+	}
+	// verify that all descendends were deleted
+	for _, child := range(list) {
+		if _, found := chain.BlockNode(child.Hash()); found {
+			t.Errorf("chain failed to delete DAG node %x", child.Hash())
+		}
+		if _, found := chain.Block(child.Hash()); found {
+			t.Errorf("chain failed to delete block %x", child.Hash())
+		}
+	}
+}
+
 func TestBlockChainInMemAddNodeUncomputed(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()

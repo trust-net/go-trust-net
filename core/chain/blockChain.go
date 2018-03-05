@@ -90,6 +90,38 @@ func (chain *BlockChainInMem) Shutdown() error {
 	return chain.db.Close()
 }
 
+// reset chain DB and flush all existing data
+func (chain *BlockChainInMem) Flush() error {
+	chain.lock.Lock()
+	defer chain.lock.Unlock()
+	chain.logger.Debug("Flushing DB and resetting chain DAG")
+	// reset tip to genesis block
+	chain.tip = chain.genesis.Hash()
+	// save the tip in DB
+	if err := chain.db.Put(dagTip, chain.tip.Bytes()); err != nil {
+		return core.NewCoreError(core.ERR_DB_UNINITIALIZED, err.Error())
+	}
+	chain.depth = 0
+	// read the genesis from DB, to also retreive descendents
+	genesisNode, _ := chain.BlockNode(chain.genesis.Hash()) 
+	genesis, _ := chain.Block(chain.genesis.Hash())
+	chain.td = genesis.Timestamp()
+	// walk down the mainlist and delete blocks
+	i := 1
+	for child := chain.findMainListChild(genesisNode, nil); child != nil; {
+		chain.logger.Debug("[%05d] : deleting '%x'", i, child.Hash())
+		i++
+		if err := chain.db.Delete(tableKey(tableBlockNode, child.Hash())); err != nil {
+			chain.logger.Error("failed to remove block node from DAG: %s", err.Error())
+		}
+		if err := chain.db.Delete(tableKey(tableBlockSpec, child.Hash())); err != nil {
+			chain.logger.Error("failed to remove block from DB: %s", err.Error())
+		}
+		child = chain.findMainListChild(child, nil)
+	}
+	return nil
+}
+
 func (chain *BlockChainInMem) Depth() uint64 {
 	return chain.depth
 }
@@ -250,7 +282,7 @@ func (chain *BlockChainInMem) AddBlockNode(block core.Block) error {
 func (chain *BlockChainInMem) findMainListChild(parent, skipChild *BlockNode) *BlockNode {
 	for _, childHash := range (parent.Children()) {
 		child, _ := chain.BlockNode(childHash)
-		if child.IsMainList() && (skipChild == nil || *skipChild.Hash() != *child.Hash()) {
+		if child != nil && child.IsMainList() && (skipChild == nil || *skipChild.Hash() != *child.Hash()) {
 			return child
 		}
 	}
