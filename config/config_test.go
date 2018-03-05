@@ -8,6 +8,10 @@ import (
 // it seems go unit tests persist package scope artifacts, and hence need to
 // explicitly reset/clear package scope variable before each test case run
 func reset() {
+	// cleanup DB for next test
+	if c != nil {
+		c.db.Close()
+	}
 	c = nil
 }
 
@@ -29,8 +33,8 @@ func TestHappyPathInitialization(t *testing.T) {
 	if *config.NetworkId() != "0.0.0.0" {
 		t.Errorf("Unexpected default value for NetworkId', Found '%s'", *config.NetworkId())
 	}
-	if *config.DataDir() != "tmp" {
-		t.Errorf("Unexpected default value for DataDir', Found '%s'", *config.DataDir())
+	if config.Db() == nil {
+		t.Errorf("Db not initialized")
 	}
 //	expected := "3661376330396163373461343666633036613661326438623532316132613762333062613863613065333963656461356439363061626563306362356533396639643063643139393162326534386637326536313337323630333039353762366366386639613934303431306466643264313463643164353432333761346134"
 //	hex := fmt.Sprintf("%x", discover.PubkeyID(&config.Key().PublicKey))
@@ -89,7 +93,6 @@ func TestInvalidConfigData(t *testing.T) {
 		fmt.Printf("Got correct error: %s\n", err.Error())
 	}
 }
-
 
 func TestInvalidBootnode(t *testing.T) {
 	reset()
@@ -151,6 +154,18 @@ func TestMandatoryParamDataDir(t *testing.T) {
 	} else if err.(*ConfigError).Code() != ERR_MISSING_PARAM {
 		fmt.Printf("Got error: %s\n", err.Error())
 		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_MISSING_PARAM, err.(*ConfigError).Code())
+	} else {
+		fmt.Printf("Got correct error: %s\n", err.Error())
+	}
+}
+
+func TestInvalidDataDirectory(t *testing.T) {
+	reset()
+	configFile := "invalidDataDirectory.json"
+	if err := InitializeConfig(&configFile, nil, nil); err == nil {
+		t.Errorf("Did not detect invalid data directory")
+	} else if err.(*ConfigError).Code() != ERR_DB_FAILURE {
+		t.Errorf("Did not detect correct error code: Expected %d, Found %d", ERR_DB_FAILURE, err.(*ConfigError).Code())
 	} else {
 		fmt.Printf("Got correct error: %s\n", err.Error())
 	}

@@ -63,7 +63,7 @@ func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 	mgr.logger.Debug("Created new instance of counter protocol manager")
 	mgr.genesis.ComputeHash()
 	config, _ := config.Config()
-	mgr.stateDb, _ = db.NewDatabaseLevelDB(*config.DataDir(), 0, 0)
+	mgr.stateDb = config.Db()
 	// initialize the world state from DB, if exists
 	if data, err := mgr.stateDb.Get(networkCountr); err == nil {
 		if err := common.Deserialize(data, &mgr.state); err != nil {
@@ -75,7 +75,7 @@ func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 	} else {
 		mgr.logger.Debug("Using blank world state: %s", mgr.state)
 	}
-	if chain, err := chain.NewBlockChainInMem(mgr.genesis, mgr.stateDb); err != nil {
+	if chain, err := chain.NewBlockChainInMem(mgr.genesis, config.Db()); err != nil {
 		mgr.logger.Error("Failed to create blockchain: %s", err.Error())
 		return nil
 	} else {

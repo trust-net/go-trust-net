@@ -14,6 +14,7 @@ const (
 	ERR_INVALID_SECRET_DATA = 0x07
 	ERR_MISSING_PARAM = 0x08
 	ERR_NOT_INITIALIZED = 0x09
+	ERR_DB_FAILURE = 0x0a
 )
 
 type ConfigError struct {

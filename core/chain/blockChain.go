@@ -82,7 +82,7 @@ func NewBlockChainInMem(genesis core.Block, db db.Database) (*BlockChainInMem, e
 			chain.td = core.BytesToByte8(block.Timestamp().Bytes())
 		}
 	}
-	chain.logger.Debug("Created new instance of in memory block chain DAG")
+	chain.logger.Debug("Initialized block chain DAG")
 	return chain, nil
 }
 

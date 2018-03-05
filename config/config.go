@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"encoding/json"
 	"math/big"
+	"github.com/trust-net/go-trust-net/db"
 	"github.com/ethereum/go-ethereum/p2p/discover"
 	"github.com/ethereum/go-ethereum/crypto"
 
@@ -16,7 +17,7 @@ type config struct{
 	bootnodes []*discover.Node
 	nodeName *string
 	networkId *string
-	dataDir *string
+	db db.Database
 	key *ecdsa.PrivateKey
 	port *string
 	natEnabled *bool
@@ -63,8 +64,8 @@ func (c *config) NetworkId() *string {
 	return c.networkId
 }
 
-func (c *config) DataDir() *string {
-	return c.dataDir
+func (c *config) Db() db.Database {
+	return c.db
 }
 
 func (c *config) Key() *ecdsa.PrivateKey {
@@ -108,11 +109,24 @@ func InitializeConfig(configFile *string, port *string, natEnabled *bool) error 
 				return NewConfigError(ERR_INVALID_CONFIG, err.Error());
 			} else {
 				// validate mandatory simple config params
+				var leveldb db.Database
 				if params.DataDir == nil {
 					return NewConfigError(ERR_MISSING_PARAM, "data directory not specified")
+				} else {
+					// open and create instance of Db
+					// this will also check for valid and accessible directory
+					var err error
+					if leveldb, err = db.NewDatabaseLevelDB(*params.DataDir, 0, 0); err != nil {
+						return NewConfigError(ERR_DB_FAILURE, err.Error())
+					} else {
+						defer func() {
+							// close DB if config initialization did not complete
+							if c == nil {
+								leveldb.Close()
+							}
+						}()
+					}
 				}
-				// TODO, add check for valid and accessible directory
-				
 				if params.NetworkId == nil {
 					return NewConfigError(ERR_MISSING_PARAM, "network ID not specified")
 				}
@@ -125,7 +139,7 @@ func InitializeConfig(configFile *string, port *string, natEnabled *bool) error 
 					port: port,
 					natEnabled: natEnabled,
 					networkId: params.NetworkId,
-					dataDir: params.DataDir,
+					db: leveldb,
 				}
 				// parse bootnodes and add to config, if present
 				if params.Bootnodes != nil {
