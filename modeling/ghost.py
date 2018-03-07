@@ -69,7 +69,7 @@ class Miner():
         for i in range(UNCLE_DEPTH - self.backward):
             for c in self.children.get(h["id"], {}):
                 u[c] = True
-            # u[h["id"]] = True
+            u[h["id"]] = True
             # notu[H["id"]] = True
             # for c in H["uncles"]:
             #     notu[c] = True
