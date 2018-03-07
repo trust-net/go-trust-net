@@ -69,7 +69,7 @@ class Miner():
         for i in range(UNCLE_DEPTH - self.backward):
             for c in self.children.get(h["id"], {}):
                 u[c] = True
-            u[h["id"]] = True
+            # u[h["id"]] = True
             # notu[H["id"]] = True
             # for c in H["uncles"]:
             #     notu[c] = True
@@ -162,10 +162,10 @@ while h["id"] > UNCLE_DEPTH + 2:
     for u in h["uncles"]:
         ZORO[u] = True
         u2 = miners[0].blocks[u]
-        # profit[u2["miner"]] \
-        #     = profit.get(u2["miner"], 0) + UNCLE_REWARD_COEFF - UNCLE_DEPTH_PENALTY * (h["height"] - u2["height"])
         profit[u2["miner"]] \
-            = profit.get(u2["miner"], 0) + 1.0
+            = profit.get(u2["miner"], 0) + UNCLE_REWARD_COEFF - UNCLE_DEPTH_PENALTY * (h["height"] - u2["height"])
+        # profit[u2["miner"]] \
+        #     = profit.get(u2["miner"], 0) + 1.0
     h = miners[0].blocks[h["parent"]]
 
 # print "### PRINTING HEADS ###"
