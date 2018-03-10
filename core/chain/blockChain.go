@@ -44,7 +44,7 @@ type BlockChainInMem struct {
 // on all instances of this blockchain
 func NewBlockChainInMem(genesis core.Block, db db.Database) (*BlockChainInMem, error) {
 	chain := &BlockChainInMem{
-		genesis: NewBlockNode(genesis, 0),
+		genesis: NewBlockNode(genesis),
 		depth: 0,
 		td: core.BytesToByte8(genesis.Timestamp().Bytes()),
 		db: db,
@@ -231,7 +231,7 @@ func (chain *BlockChainInMem) AddBlockNode(block core.Block) error {
 		return core.NewCoreError(core.ERR_ORPHAN_BLOCK, "orphan block")
 	} else {
 		// add the new child node into our data store
-		child := NewBlockNode(block, parent.Depth()+1)
+		child := NewBlockNode(block)
 		chain.SaveBlock(block)
 		// update parent's children list
 		parent.AddChild(child.Hash())

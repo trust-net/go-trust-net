@@ -10,9 +10,9 @@ var child2 = core.BytesToByte64([]byte("child2"))
 
 func TestNewBlockNode(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
-	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 0, myNode)
+	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 13, 11, 0, myNode)
 	block.ComputeHash()
-	node := NewBlockNode(block, 11)
+	node := NewBlockNode(block)
 	if *node.Hash() != *block.Hash() {
 		t.Errorf("Hash: Expected: %d, Actual: %d", block.Hash(), node.Hash())
 	}
@@ -21,6 +21,9 @@ func TestNewBlockNode(t *testing.T) {
 	}
 	if node.Depth() != 11 {
 		t.Errorf("Depth: Expected: %d, Actual: %d", 11, node.Depth())
+	}
+	if node.Weight() != 13 {
+		t.Errorf("Weight: Expected: %d, Actual: %d", 13, node.Weight())
 	}
 	if len(node.Children()) != 0 {
 		t.Errorf("Childrens: Expected: %d, Actual: %d", 0, len(node.Children()))
@@ -35,9 +38,9 @@ func TestNewBlockNode(t *testing.T) {
 
 func TestSetIsMain(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
-	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 0, myNode)
+	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 11, 11, 0, myNode)
 	block.ComputeHash()
-	node := NewBlockNode(block, 11)
+	node := NewBlockNode(block)
 	if node.IsMainList() {
 		t.Errorf("Is main list: Expected: %d, Actual: %d", false, node.IsMainList())
 	}
@@ -49,9 +52,9 @@ func TestSetIsMain(t *testing.T) {
 
 func TestAddChild(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
-	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 0, myNode)
+	block := core.NewSimpleBlock(core.BytesToByte64([]byte("previous")), 11, 11, 0, myNode)
 	block.ComputeHash()
-	node := NewBlockNode(block, 11)
+	node := NewBlockNode(block)
 	node.AddChild(child1)
 	node.AddChild(child2)
 	if len(node.Children()) != 2 {

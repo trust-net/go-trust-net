@@ -57,7 +57,7 @@ func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 	mgr := CountrProtocolManager{
 		state: worldState{0},
 		miner: core.NewSimpleNodeInfo(miner),
-		genesis: core.NewSimpleBlock(core.BytesToByte64(nil), genesisTimeStamp, core.NewSimpleNodeInfo("")),
+		genesis: core.NewSimpleBlock(core.BytesToByte64(nil), 0, 0, genesisTimeStamp, core.NewSimpleNodeInfo("")),
 	}
 	mgr.logger = log.NewLogger(mgr)
 	mgr.logger.Debug("Created new instance of counter protocol manager")
@@ -113,7 +113,7 @@ func (mgr *CountrProtocolManager) Shutdown() {
 
 func (mgr *CountrProtocolManager) delta(opCode *core.Byte8) bool {
 	// create new block and add to my blockchain
-	block := core.NewSimpleBlock(mgr.chain.Tip().Hash(), 0, mgr.miner)
+	block := core.NewSimpleBlock(mgr.chain.Tip().Hash(), mgr.chain.Tip().Weight()+1, mgr.chain.Tip().Depth()+1, 0, mgr.miner)
 	block.AddTransaction(opCode)
 	block.ComputeHash()
 	if err := mgr.chain.AddBlockNode(block); err != nil {

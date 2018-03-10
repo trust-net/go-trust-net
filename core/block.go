@@ -16,6 +16,9 @@ type Block interface {
 	Miner() *Byte64
 	Nonce() *Byte8
 	Timestamp() *Byte8
+	Depth() *Byte8
+	Weight() *Byte8
+	Uncles() []*Byte64
 	OpCode() *Byte8
 	Hash() *Byte64
 }
@@ -26,6 +29,9 @@ type BlockSpec struct {
 	Miner *Byte64
 	OpCode	*Byte8
 	Timestamp *Byte8
+	Depth *Byte8
+	Weight *Byte8
+	Uncles []*Byte64
 	Nonce *Byte8
 }
 
@@ -36,6 +42,9 @@ type SimpleBlock struct {
 	hash *Byte64
 	opCode	*Byte8
 	timestamp *Byte8
+	depth *Byte8
+	weight *Byte8
+	uncles []*Byte64
 	nonce uint64
 }
 
@@ -59,9 +68,28 @@ func (b *SimpleBlock) OpCode() *Byte8 {
 	return b.opCode
 }
 
+func (b *SimpleBlock) Depth() *Byte8 {
+	return b.depth
+}
+
+func (b *SimpleBlock) Weight() *Byte8 {
+	return b.weight
+}
+
+func (b *SimpleBlock) Uncles() []*Byte64 {
+	return b.uncles
+}
+
 func (b *SimpleBlock) AddTransaction(opCode *Byte8) {
 	// we are only doing 1 transaction in a block
 	b.opCode = opCode
+}
+
+func (b *SimpleBlock) AddUncle(uncle *Byte64, weight uint64) {
+	// add uncle to our uncle list
+	b.uncles = append(b.uncles, uncle)
+	// update weight from uncle's weight
+	b.weight = Uint64ToByte8(weight + b.weight.Uint64())
 }
 
 func (b *SimpleBlock) Hash() *Byte64 {
@@ -99,7 +127,7 @@ func NewSimpleNodeInfo(id string) *SimpleNodeInfo {
 	}
 }
 
-func NewSimpleBlock(previous *Byte64, ts uint64, miner NodeInfo) *SimpleBlock {
+func NewSimpleBlock(previous *Byte64, weight uint64, depth uint64, ts uint64, miner NodeInfo) *SimpleBlock {
 	if ts == 0 {
 		ts = uint64(time.Now().UnixNano())
 	}
@@ -108,6 +136,9 @@ func NewSimpleBlock(previous *Byte64, ts uint64, miner NodeInfo) *SimpleBlock {
 		miner: BytesToByte64([]byte(miner.Id())),
 		nonce: 0x0,
 		timestamp: Uint64ToByte8(ts),
+		depth: Uint64ToByte8(depth),
+		weight: Uint64ToByte8(weight),
+		uncles: make([]*Byte64, 0, 2),
 		opCode: Uint64ToByte8(0),
 		hash: nil,
 	}
@@ -120,8 +151,14 @@ func NewSimpleBlockFromSpec(spec *BlockSpec) *SimpleBlock {
 		miner: BytesToByte64(spec.Miner.Bytes()),
 		nonce: spec.Nonce.Uint64(),
 		timestamp: BytesToByte8(spec.Timestamp.Bytes()),
+		depth: BytesToByte8(spec.Depth.Bytes()),
+		weight: BytesToByte8(spec.Weight.Bytes()),
+		uncles: make([]*Byte64, len(spec.Uncles)),
 		opCode: BytesToByte8(spec.OpCode.Bytes()),
 		hash: nil,
+	}
+	for i, uncle := range spec.Uncles {
+		block.uncles[i] = BytesToByte64(uncle.Bytes())
 	}
 	block.ComputeHash()
 	return &block
@@ -130,11 +167,18 @@ func NewSimpleBlockFromSpec(spec *BlockSpec) *SimpleBlock {
 
 // create a new simple block from a block spec
 func NewBlockSpecFromBlock(block Block) *BlockSpec {
-	return &BlockSpec{
+	spec := BlockSpec{
 		ParentHash: BytesToByte64(block.ParentHash().Bytes()),
 		Miner: BytesToByte64(block.Miner().Bytes()),
 		Nonce: BytesToByte8(block.Nonce().Bytes()),
 		Timestamp: BytesToByte8(block.Timestamp().Bytes()),
+		Depth: BytesToByte8(block.Depth().Bytes()),
+		Weight: BytesToByte8(block.Weight().Bytes()),
+		Uncles: make([]*Byte64, len(block.Uncles())),
 		OpCode: BytesToByte8(block.OpCode().Bytes()),
 	}
+	for i, uncle := range block.Uncles() {
+		spec.Uncles[i] = BytesToByte64(uncle.Bytes())
+	}	
+	return &spec
 }
