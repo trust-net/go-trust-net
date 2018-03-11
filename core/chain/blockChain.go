@@ -12,6 +12,7 @@ import (
 
 const (
 	maxBlocks = 100
+	maxUncleDistance = uint64(5)
 )
 
 var tableBlockNode = []byte("BlockNode-")
@@ -210,6 +211,67 @@ func (chain *BlockChainInMem) SaveBlock(block core.Block) error {
 	}
 }
 
+type uncle struct {
+	hash *core.Byte64
+	miner *core.Byte64
+	depth uint64
+	distance uint64
+}
+
+func (chain *BlockChainInMem) findNonDirectAncestors(childNode *core.Byte64, remainingDistance, maxDepth uint64) []uncle {
+	uncles := make([]uncle, 0, 5)
+	if remainingDistance == 0 {
+		chain.logger.Debug("reached max uncle search: remainingDistance %d", remainingDistance)
+		return uncles
+	}
+	
+	if node, found := chain.BlockNode(childNode); found {
+		for _, grandChild := range node.Children() {
+			if grandChild != nil {
+				if grandChildBlock, found := chain.Block(grandChild); found && grandChildBlock.Depth().Uint64() <= maxDepth {
+					chain.logger.Debug("Found uncle: %x, remainingDistance: %d, depth %d", *grandChildBlock.Hash(), remainingDistance, grandChildBlock.Depth().Uint64())
+					uncles = append(uncles, uncle{
+							hash: grandChildBlock.Hash(),
+							miner: grandChildBlock.Miner(),
+							depth: grandChildBlock.Depth().Uint64(),
+							distance: maxUncleDistance - remainingDistance,
+							
+					})
+					uncles = append(uncles, chain.findNonDirectAncestors(grandChild, remainingDistance-1, maxDepth)...)
+				} 
+			}
+		}
+	}
+	return uncles
+}
+
+func (chain *BlockChainInMem) findUncles(grandParent, parent *core.Byte64, remainingDistance, maxDepth uint64) []uncle {
+	uncles := make([]uncle, 0, 5)
+	if remainingDistance == 0 {
+		chain.logger.Debug("reached max uncle search: remainingDistance %d", remainingDistance)
+		return uncles
+	}
+	if node, found := chain.BlockNode(grandParent); found {
+		for _, childNode := range node.Children() {
+			if childNode != nil && *childNode != *parent {
+				if childBlock, found := chain.Block(childNode); found {
+					chain.logger.Debug("Found uncle: %x, remainingDistance: %d, depth %d", *childBlock.Hash(), remainingDistance, childBlock.Depth().Uint64())
+					uncles = append(uncles, uncle{
+							hash: childBlock.Hash(),
+							miner: childBlock.Miner(),
+							depth: childBlock.Depth().Uint64(),
+							distance: maxUncleDistance - remainingDistance,
+							
+					})
+					uncles = append(uncles, chain.findNonDirectAncestors(childNode, remainingDistance-1, maxDepth)...)
+				} 
+			}
+		}
+		uncles = append(uncles, chain.findUncles(node.Parent(), node.Hash(), remainingDistance-1, maxDepth)...)
+	}
+	return uncles
+}
+
 func (chain *BlockChainInMem) AddBlockNode(block core.Block) error {
 	if block == nil {
 		chain.logger.Error("attempt to add nil block!!!")
@@ -230,6 +292,10 @@ func (chain *BlockChainInMem) AddBlockNode(block core.Block) error {
 		chain.logger.Error("attempt to add an orphan block!!!")
 		return core.NewCoreError(core.ERR_ORPHAN_BLOCK, "orphan block")
 	} else {
+		for _, uncle := range chain.findUncles(parent.Parent(), parent.Hash(), maxUncleDistance, parent.Depth()) {
+			// TODO: process uncle list
+			chain.logger.Debug("Adding %d distant uncle: %x, miner: %x", uncle.distance, *uncle.hash, *uncle.miner)
+		}
 		// add the new child node into our data store
 		child := NewBlockNode(block)
 		chain.SaveBlock(block)

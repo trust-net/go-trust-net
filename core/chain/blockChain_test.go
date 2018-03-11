@@ -3,10 +3,8 @@ package chain
 import (
     "testing"
     "time"
-    "sync"
     "fmt"
     "math/rand"
-//	"encoding/gob"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/common"
@@ -425,16 +423,16 @@ func TestBlockChainInMemConsensus(t *testing.T) {
 	chain3, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db3)
 	node1, node2, node3 := core.NewSimpleNodeInfo("test node 1"), core.NewSimpleNodeInfo("test node 2"), core.NewSimpleNodeInfo("test node 3")
 	// define a node function that adds blocks to chain
-	lock := sync.RWMutex{}
 	counter := 0
 	nodeFunc := func(myChain *BlockChainInMem, myNode *core.SimpleNodeInfo) {
 		// simulate mining delay
 		time.Sleep(time.Millisecond * time.Duration(rand.Intn(200)))
 		// get lock for exclusive access
-		lock.RLock()
-		defer lock.RUnlock()
+		myChain.lock.Lock()
 		// create a new node using the tip of this node's blockchain
-		block := core.NewSimpleBlock(myChain.Tip().Hash(), myChain.Tip().Weight()+1, myChain.Tip().Depth()+1, 0, myNode)
+		tip := myChain.Tip()
+		myChain.lock.Unlock()
+		block := core.NewSimpleBlock(tip.Hash(), tip.Weight()+1, tip.Depth()+1, 0, myNode)
 		block.ComputeHash()
 		// simulate broadcast to all nodes
 		chain1.AddBlockNode(block)
@@ -476,3 +474,62 @@ func TestBlockChainInMemConsensus(t *testing.T) {
 	}
 }
 
+func TestBlockChainUncleUpdates(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	chain, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db)
+	myNode := core.NewSimpleNodeInfo("test node")
+	// build chain 1 with 6 deep
+	chain1blocks := makeBlocks(6, chain.genesis.Hash(), myNode, 1, 1)
+	for i, block := range(chain1blocks) {
+		if err := chain.AddBlockNode(block); err != nil {
+			t.Errorf("chain failed to add block #%d: %s", i, err)
+		}
+	}
+	// add a new block forked immediately at genesis
+	block_2_1 := makeBlocks(1, chain.genesis.Hash(), myNode, 1, 1)[0]
+	chain.AddBlockNode(block_2_1)
+	// verify that this block shows up as uncle for 5th block on main chain
+	log.SetLogLevel(log.NONE)
+	uncles := chain.findUncles(chain1blocks[2].Hash(), chain1blocks[3].Hash(), maxUncleDistance, chain1blocks[3].Depth().Uint64())
+	if len(uncles) != 1 {
+		t.Errorf("did not find any uncles for block at depth %d", chain1blocks[4].Depth().Uint64())
+		return
+	}
+	if *uncles[0].hash != *block_2_1.Hash() {
+		t.Errorf("Incorrect uncle: Expected %x, found %x", *block_2_1.Hash(), *uncles[0].hash)
+	}
+	// add a new chain forked at 3rd block in main chain
+	chain2blocks := makeBlocks(3, chain1blocks[2].Hash(), myNode, chain1blocks[2].Weight().Uint64()+1, chain1blocks[2].Depth().Uint64()+1)
+	log.SetLogLevel(log.NONE)
+	for i, block := range(chain2blocks) {
+		if err := chain.AddBlockNode(block); err != nil {
+			t.Errorf("chain failed to add block #%d: %s", i, err)
+		}
+	}
+	// verify that forked chain blocks show up as uncles
+	log.SetLogLevel(log.NONE)
+	uncles = chain.findUncles(chain1blocks[2].Hash(), chain1blocks[3].Hash(), maxUncleDistance, chain1blocks[3].Depth().Uint64())
+	// we expect the 1st forked block at genesis and only 1 forked chain block as uncle (others in forked chain have same or greater depth)
+	if len(uncles) != 2 {
+		t.Errorf("found incorrect number of uncles, expected %d, found %d", 2, len(uncles))
+	}
+	for _, uncle := range uncles {
+//		fmt.Printf("Uncle: %x, Distance: %d, Depth %d\n", *uncle.hash, uncle.distance, uncle.depth)
+		if *uncle.hash == *chain2blocks[1].Hash() || *uncle.hash == *chain2blocks[2].Hash() {
+			t.Errorf("unexpected uncle %x at depth %d", *uncle.hash, uncle.depth)
+		}
+	} 
+	log.SetLogLevel(log.NONE)
+	uncles = chain.findUncles(chain1blocks[4].Hash(), chain1blocks[5].Hash(), maxUncleDistance, chain1blocks[5].Depth().Uint64())
+	// we expect the 3 forked chain blocks as uncle, but not the 1st forked block at genesis
+	if len(uncles) != 3 {
+		t.Errorf("found incorrect number of uncles, expected %d, found %d", 4, len(uncles))
+	}
+	for _, uncle := range uncles {
+//		fmt.Printf("Uncle: %x, Distance: %d, Depth %d\n", *uncle.hash, uncle.distance, uncle.depth)
+		if *uncle.hash == *block_2_1.Hash() {
+			t.Errorf("unexpected uncle %x at depth %d", *uncle.hash, uncle.depth)
+		}
+	} 
+}
