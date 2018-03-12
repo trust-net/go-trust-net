@@ -447,26 +447,55 @@ func TestBlockChainInMemConsensus(t *testing.T) {
 		myChain.lock.Lock()
 		// create a new node using the tip of this node's blockchain
 		tip := myChain.Tip()
+		parent, _ := myChain.BlockNode(tip.Parent())
 		myChain.lock.Unlock()
 		block := core.NewSimpleBlock(tip.Hash(), tip.Weight()+1, tip.Depth()+1, 0, myNode)
 		// for every 7th block, simulate a delayed/heavier block
 		if (counter+1) % 7 == 0 {
-			parent, _ := myChain.BlockNode(tip.Parent())
 			block = core.NewSimpleBlock(parent.Hash(), parent.Weight()+1, parent.Depth()+1, 0, myNode)
 		}
 		block.ComputeHash()
 		// simulate broadcast to all nodes
-		if err := chain1.AddBlockNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
-			fmt.Printf("%s failed to add block to chain1 at depth %d: %s\n", myNode.Id(), chain1.Depth(), err)
-		}
-		if err := chain2.AddBlockNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
-			fmt.Printf("%s failed to add block to chain2 at depth %d: %s\n", myNode.Id(), chain2.Depth(), err)
-		}
-		if err := chain3.AddBlockNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
-			fmt.Printf("%s failed to add block to chain3 at depth %d: %s\n", myNode.Id(), chain3.Depth(), err)
+		switch myChain {
+			case chain1:
+				// add local block
+				if err := chain1.AddBlockNode(block); err != nil {
+					fmt.Printf("%s failed to add new block to chain1 at depth %d: %s\n", myNode.Id(), block.Depth().Uint64(), err)
+				}
+				// broadcast network block
+				if err := chain2.AddNetworkNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
+					fmt.Printf("%s failed to add network block to chain2 at depth %d: %s\n", myNode.Id(), block.Depth().Uint64(), err)
+				}
+				if err := chain3.AddNetworkNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
+					fmt.Printf("%s failed to add network block to chain3 at depth %d: %s\n", myNode.Id(), block.Depth().Uint64(), err)
+				}
+			case chain2:
+				// add local block
+				if err := chain2.AddBlockNode(block); err != nil {
+					fmt.Printf("%s failed to add new block to chain2 at depth %d: %s\n", myNode.Id(), block.Depth().Uint64(), err)
+				}
+				// broadcast network block
+				if err := chain1.AddNetworkNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
+					fmt.Printf("%s failed to add network block to chain1 at depth %d: %s\n", myNode.Id(), block.Depth().Uint64(), err)
+				}
+				if err := chain3.AddNetworkNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
+					fmt.Printf("%s failed to add network block to chain3 at depth %d: %s\n", myNode.Id(), block.Depth().Uint64(), err)
+				}
+			case chain3:
+				// add local block
+				if err := chain3.AddBlockNode(block); err != nil {
+					fmt.Printf("%s failed to add new block to chain3 at depth %d: %s\n", myNode.Id(), block.Depth().Uint64(), err)
+				}
+				// broadcast network block
+				if err := chain2.AddNetworkNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
+					fmt.Printf("%s failed to add network block to chain2 at depth %d: %s\n", myNode.Id(), block.Depth().Uint64(), err)
+				}
+				if err := chain1.AddNetworkNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
+					fmt.Printf("%s failed to add network block to chain1 at depth %d: %s\n", myNode.Id(), block.Depth().Uint64(), err)
+				}
 		}
 		counter++
-		fmt.Printf("%s : depth: %d, Counter: %d\n", myNode.Id(),myChain.Depth(), counter)
+		fmt.Printf("%s : chain depth: %d, chain weight: %d, Counter: %d\n", myNode.Id(), myChain.Depth(), myChain.Weight(), counter)
 	}
 	
 	// run the node functions on 3 nodes concurrently
@@ -595,7 +624,7 @@ func TestBlockChainAddBlockWithUncles(t *testing.T) {
 }
 
 
-func TestBlockChainAddBlockWithUnknownUncle(t *testing.T) {
+func TestBlockChainAddNetworkBlockWithUnknownUncle(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	chain, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db)
@@ -614,7 +643,7 @@ func TestBlockChainAddBlockWithUnknownUncle(t *testing.T) {
 	child.AddUncle(core.BytesToByte64([]byte("fake uncle")), 1)
 	child.ComputeHash()
 	// attempt to add block to chain, it should fail
-	if err := chain.AddBlockNode(child); err == nil {
+	if err := chain.AddNetworkNode(child); err == nil {
 		t.Errorf("failed to detect incorrect uncle")
 	} else if err.(*core.CoreError).Code() != core.ERR_INVALID_UNCLE {
 		t.Errorf("incorrect error code: Expected %d, Found %d", core.ERR_INVALID_UNCLE, err.(*core.CoreError).Code())

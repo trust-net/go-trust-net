@@ -280,11 +280,15 @@ func (mgr *CountrProtocolManager) processBlockSpec(spec *core.BlockSpec, from *p
 				mgr.logger.Error("Invalid opcode '%d' from '%s'", block.OpCode().Uint64(), from.ID())
 				return 0, nil, protocol.NewProtocolError(protocol.ErrorInvalidResponse, "GetBlocksResponseMsg has invalid opcode")
 		}
-		// add block to our blockchain
-		if err := mgr.chain.AddBlockNode(block); err != nil {
+		// add network block to our blockchain
+		if err := mgr.chain.AddNetworkNode(block); err != nil {
 			mgr.logger.Error("Failed to add new block from '%s'", from.ID())
 			return delta, block.Hash(), err
 		}
+		// mark the sender has having seen this message
+		from.AddTx(block.Hash())
+		// broadcast message to other peers
+		mgr.broadCast(block)
 		// update our counter
 		return delta, block.Hash(), nil	
 }
