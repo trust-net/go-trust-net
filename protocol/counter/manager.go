@@ -168,7 +168,7 @@ func (mgr *CountrProtocolManager) broadCast(block core.Block) int {
 }
 
 func (mgr *CountrProtocolManager) getHandshakeMsg() *protocol.HandshakeMsg {
-	handshakeMsg.TotalWeight = *core.Uint64ToByte8(mgr.chain.Depth())
+	handshakeMsg.TotalWeight = *core.Uint64ToByte8(mgr.chain.Weight())
 	return &handshakeMsg
 }
 

@@ -271,7 +271,24 @@ func makeBlocks(len int, parent *core.Byte64, miner core.NodeInfo, startWeight, 
 	return nodes
 }
 
-func TestBlockChainInMemLongestChain(t *testing.T) {
+func addChain(chain *BlockChainInMem, blocks []*core.SimpleBlock, miner core.NodeInfo) error{
+	var parent *core.SimpleBlock
+	parent = nil  
+	for i, block := range(blocks) {
+		if parent != nil {
+			block = core.NewSimpleBlock(parent.Hash(), parent.Weight().Uint64()+1, parent.Depth().Uint64()+1, 0, miner)
+			block.ComputeHash()
+		}
+		if err := chain.AddBlockNode(block); err != nil {
+			return err
+		}
+		parent = block
+		blocks[i] = block
+	}
+	return nil
+}
+
+func TestBlockChainInMemHeaviestChain(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	chain, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db)
@@ -282,24 +299,23 @@ func TestBlockChainInMemLongestChain(t *testing.T) {
 	chain.AddBlockNode(ancestor)
 	// now add 1st chain with 6 blocks after the ancestor
 	chain1 := makeBlocks(6, ancestor.Hash(), myNode, 2, 2)
-	for i, child := range(chain1) {
-		if err := chain.AddBlockNode(child); err != nil {
-			t.Errorf("1st chain failed to add block #%d: %s", i, err)
-		}
+	if err := addChain(chain, chain1, myNode); err != nil {
+		t.Errorf("1st chain failed to add block: %s", err)
 	}
 	// now add 2nd chain with 4 blocks after the ancestor
+	// each of these new block additions will also include uncle weights from 1st chain
 	chain2 := makeBlocks(4, ancestor.Hash(), myNode, 2, 2)
-	for i, child := range(chain2) {
-		if err := chain.AddBlockNode(child); err != nil {
-			t.Errorf("2nd chain failed to add block #%d: %s", i, err)
-		}
+	log.SetLogLevel(log.NONE)
+	if err := addChain(chain, chain2, myNode); err != nil {
+		t.Errorf("2nd chain failed to add block: %s", err)
 	}
-	// validate that longest chain (chain1, length 1+6) wins
-	if chain.Depth() != 7 {
-		t.Errorf("chain depth incorrect: Expected '%d' Found '%d'", 7, chain.Depth())
+	log.SetLogLevel(log.NONE)
+	// validate that heaviest chain (chain2, length 1+4) wins
+	if chain.Depth() != 5 {
+		t.Errorf("chain depth incorrect: Expected '%d' Found '%d'", 5, chain.Depth())
 	}
-	if *chain.TD() != *chain1[5].Timestamp() {
-		t.Errorf("chain TD incorrect: Expected '%d' Found '%d'", chain1[5].Timestamp(), chain.TD())
+	if *chain.TD() != *chain2[3].Timestamp() {
+		t.Errorf("chain TD incorrect: Expected '%d' Found '%d'", chain2[3].Timestamp().Uint64(), chain.TD().Uint64())
 	}
 }
 
@@ -413,7 +429,7 @@ func TestBlockChainInMemWalkThroughOverMax(t *testing.T) {
 
 
 func TestBlockChainInMemConsensus(t *testing.T) {
-	log.SetLogLevel(log.NONE)
+	log.SetLogLevel(log.DEBUG)
 	// simulate 3 different concurrent nodes updating their individual blockchain instances
 	db1, _ := db.NewDatabaseInMem()
 	chain1, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db1)
@@ -433,11 +449,22 @@ func TestBlockChainInMemConsensus(t *testing.T) {
 		tip := myChain.Tip()
 		myChain.lock.Unlock()
 		block := core.NewSimpleBlock(tip.Hash(), tip.Weight()+1, tip.Depth()+1, 0, myNode)
+		// for every 7th block, simulate a delayed/heavier block
+		if (counter+1) % 7 == 0 {
+			parent, _ := myChain.BlockNode(tip.Parent())
+			block = core.NewSimpleBlock(parent.Hash(), parent.Weight()+1, parent.Depth()+1, 0, myNode)
+		}
 		block.ComputeHash()
 		// simulate broadcast to all nodes
-		chain1.AddBlockNode(block)
-		chain2.AddBlockNode(block)
-		chain3.AddBlockNode(block)
+		if err := chain1.AddBlockNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
+			fmt.Printf("%s failed to add block to chain1 at depth %d: %s\n", myNode.Id(), chain1.Depth(), err)
+		}
+		if err := chain2.AddBlockNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
+			fmt.Printf("%s failed to add block to chain2 at depth %d: %s\n", myNode.Id(), chain2.Depth(), err)
+		}
+		if err := chain3.AddBlockNode(core.NewSimpleBlockFromSpec(core.NewBlockSpecFromBlock(block))); err != nil {
+			fmt.Printf("%s failed to add block to chain3 at depth %d: %s\n", myNode.Id(), chain3.Depth(), err)
+		}
 		counter++
 		fmt.Printf("%s : depth: %d, Counter: %d\n", myNode.Id(),myChain.Depth(), counter)
 	}
@@ -448,9 +475,8 @@ func TestBlockChainInMemConsensus(t *testing.T) {
 		go nodeFunc(chain2, node2)
 		go nodeFunc(chain3, node3)
 	}
-	// wait for all 3 nodes to finish
-	for counter < 30 {time.Sleep(time.Millisecond * 1)}
-
+	// wait for all nodes to finish
+	for counter < 30 {time.Sleep(time.Millisecond * 100)}
 	// validate that all 3 chains have same tip node hash
 	if *chain1.Tip().Hash() != *chain2.Tip().Hash() {
 		t.Errorf("tip of chain1 and chain2 are different")
@@ -481,10 +507,8 @@ func TestBlockChainUncleUpdates(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	// build chain 1 with 6 deep
 	chain1blocks := makeBlocks(6, chain.genesis.Hash(), myNode, 1, 1)
-	for i, block := range(chain1blocks) {
-		if err := chain.AddBlockNode(block); err != nil {
-			t.Errorf("chain failed to add block #%d: %s", i, err)
-		}
+	if err := addChain(chain, chain1blocks, myNode); err != nil {
+		t.Errorf("chain failed to add block: %s", err)
 	}
 	// add a new block forked immediately at genesis
 	block_2_1 := makeBlocks(1, chain.genesis.Hash(), myNode, 1, 1)[0]
@@ -502,10 +526,8 @@ func TestBlockChainUncleUpdates(t *testing.T) {
 	// add a new chain forked at 3rd block in main chain
 	chain2blocks := makeBlocks(3, chain1blocks[2].Hash(), myNode, chain1blocks[2].Weight().Uint64()+1, chain1blocks[2].Depth().Uint64()+1)
 	log.SetLogLevel(log.NONE)
-	for i, block := range(chain2blocks) {
-		if err := chain.AddBlockNode(block); err != nil {
-			t.Errorf("chain failed to add block #%d: %s", i, err)
-		}
+	if err := addChain(chain, chain2blocks, myNode); err != nil {
+		t.Errorf("chain failed to add block: %s", err)
 	}
 	// verify that forked chain blocks show up as uncles
 	log.SetLogLevel(log.NONE)
@@ -515,7 +537,6 @@ func TestBlockChainUncleUpdates(t *testing.T) {
 		t.Errorf("found incorrect number of uncles, expected %d, found %d", 2, len(uncles))
 	}
 	for _, uncle := range uncles {
-//		fmt.Printf("Uncle: %x, Distance: %d, Depth %d\n", *uncle.hash, uncle.distance, uncle.depth)
 		if *uncle.hash == *chain2blocks[1].Hash() || *uncle.hash == *chain2blocks[2].Hash() {
 			t.Errorf("unexpected uncle %x at depth %d", *uncle.hash, uncle.depth)
 		}
@@ -527,9 +548,120 @@ func TestBlockChainUncleUpdates(t *testing.T) {
 		t.Errorf("found incorrect number of uncles, expected %d, found %d", 4, len(uncles))
 	}
 	for _, uncle := range uncles {
-//		fmt.Printf("Uncle: %x, Distance: %d, Depth %d\n", *uncle.hash, uncle.distance, uncle.depth)
 		if *uncle.hash == *block_2_1.Hash() {
 			t.Errorf("unexpected uncle %x at depth %d", *uncle.hash, uncle.depth)
 		}
 	} 
+}
+
+func TestBlockChainAddBlockWithUncles(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	chain, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db)
+	myNode := core.NewSimpleNodeInfo("test node")
+	// build chain 1 with 5 deep
+	chain1blocks := makeBlocks(5, chain.genesis.Hash(), myNode, 1, 1)
+	for i, block := range(chain1blocks) {
+		if err := chain.AddBlockNode(block); err != nil {
+			t.Errorf("chain failed to add block #%d: %s", i, err)
+		}
+	}
+	// add a new uncle block to 3rd block in main chain
+	uncle := makeBlocks(1, chain1blocks[2].Hash(), myNode, chain1blocks[2].Weight().Uint64()+1, chain1blocks[2].Depth().Uint64()+1)[0]
+	chain.AddBlockNode(uncle)
+
+	// now add a new child block to main chain
+	log.SetLogLevel(log.NONE)
+	child := makeBlocks(1, chain1blocks[4].Hash(), myNode, chain1blocks[4].Weight().Uint64()+1, chain1blocks[4].Depth().Uint64()+1)[0]
+	origWeight := child.Weight().Uint64()
+	origHash := child.Hash()
+	chain.AddBlockNode(child)
+
+	// verify that chain addition recomputed hash
+	if *origHash == *child.Hash() {
+		t.Errorf("chain did not recompute hash when adding block with uncles")
+	}
+	// fetch the child back from blockchain
+	fetched, _ := chain.Block(child.Hash())
+	if fetched == nil {
+		t.Errorf("chain failed to fetch block %x", child.Hash())
+	}
+	if len(fetched.Uncles()) != 1 {
+		t.Errorf("chain did not add uncles to the block when adding")
+	}
+	if fetched.Weight().Uint64() != origWeight+1 {
+		t.Errorf("chain did not update weight of the block when adding, expected %d, found %d", origWeight+1, fetched.Weight().Uint64())
+	}
+}
+
+
+func TestBlockChainAddBlockWithUnknownUncle(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	chain, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db)
+	myNode := core.NewSimpleNodeInfo("test node")
+	// build chain 1 with 5 deep
+	chain1blocks := makeBlocks(5, chain.genesis.Hash(), myNode, 1, 1)
+	for i, block := range(chain1blocks) {
+		if err := chain.AddBlockNode(block); err != nil {
+			t.Errorf("chain failed to add block #%d: %s", i, err)
+		}
+	}
+	// prepare a new child block to be added to chain
+	log.SetLogLevel(log.NONE)
+	child := makeBlocks(1, chain1blocks[4].Hash(), myNode, chain1blocks[4].Weight().Uint64()+1, chain1blocks[4].Depth().Uint64()+1)[0]
+	// add a fake uncle block to the new child block
+	child.AddUncle(core.BytesToByte64([]byte("fake uncle")), 1)
+	child.ComputeHash()
+	// attempt to add block to chain, it should fail
+	if err := chain.AddBlockNode(child); err == nil {
+		t.Errorf("failed to detect incorrect uncle")
+	} else if err.(*core.CoreError).Code() != core.ERR_INVALID_UNCLE {
+		t.Errorf("incorrect error code: Expected %d, Found %d", core.ERR_INVALID_UNCLE, err.(*core.CoreError).Code())
+	} else {
+		fmt.Printf("Detected correct: %s\n", err)
+	}
+}
+
+func TestBlockChainRebalanceByWeight(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	chain, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db)
+	myNode := core.NewSimpleNodeInfo("test node")
+	// build chain 1 with 5 deep
+	chain1blocks := makeBlocks(5, chain.genesis.Hash(), myNode, 1, 1)
+	for i, block := range(chain1blocks) {
+		if err := chain.AddBlockNode(block); err != nil {
+			t.Errorf("chain failed to add block #%d: %s", i, err)
+		}
+	}
+	// now add a new child block to main chain
+	log.SetLogLevel(log.NONE)
+	child := makeBlocks(1, chain1blocks[4].Hash(), myNode, chain1blocks[4].Weight().Uint64()+1, chain1blocks[4].Depth().Uint64()+1)[0]
+	chain.AddBlockNode(child)
+	// validate that tip of the blockchain points to this child
+	if *chain.Tip().Hash() != *child.Hash() || chain.Tip().Depth() != 6 {
+		t.Errorf("chain tip incorrect")
+	}
+
+	// now add two new uncle blocks to 3rd block in main chain
+	uncle1 := makeBlocks(1, chain1blocks[2].Hash(), myNode, chain1blocks[2].Weight().Uint64()+1, chain1blocks[2].Depth().Uint64()+1)[0]
+	uncle2 := makeBlocks(1, chain1blocks[2].Hash(), myNode, chain1blocks[2].Weight().Uint64()+1, chain1blocks[2].Depth().Uint64()+1)[0]
+	chain.AddBlockNode(uncle1)
+	chain.AddBlockNode(uncle2)
+	
+	// now add a new child to the 4th block in main chain, which will include above two uncles
+	log.SetLogLevel(log.NONE)
+	heavierChild := makeBlocks(1, chain1blocks[3].Hash(), myNode, chain1blocks[3].Weight().Uint64()+1, chain1blocks[3].Depth().Uint64()+1)[0]
+	chain.AddBlockNode(heavierChild)
+	// validate that blockchain has rebalanced and now tip points to heavier child
+	if *chain.Tip().Hash() != *heavierChild.Hash() {
+		t.Errorf("chain tip incorrect")
+	}
+	if chain.Tip().Depth() >  child.Depth().Uint64() {
+		t.Errorf("chain depth incorrect")
+	}
+	if chain.Tip().Weight() <  child.Weight().Uint64() {
+		t.Errorf("chain weight incorrect")
+	}
 }

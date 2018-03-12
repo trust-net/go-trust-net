@@ -33,6 +33,7 @@ type BlockChainInMem struct {
 	tip *core.Byte64
 	td	*core.Byte8
 	depth uint64
+	weight uint64
 	db db.Database
 	lock sync.RWMutex
 	logger log.Logger
@@ -125,6 +126,10 @@ func (chain *BlockChainInMem) Flush() error {
 
 func (chain *BlockChainInMem) Depth() uint64 {
 	return chain.depth
+}
+
+func (chain *BlockChainInMem) Weight() uint64 {
+	return chain.weight
 }
 
 func (chain *BlockChainInMem) TD() *core.Byte8 {
@@ -248,7 +253,7 @@ func (chain *BlockChainInMem) findNonDirectAncestors(childNode *core.Byte64, rem
 func (chain *BlockChainInMem) findUncles(grandParent, parent *core.Byte64, remainingDistance, maxDepth uint64) []uncle {
 	uncles := make([]uncle, 0, 5)
 	if remainingDistance == 0 {
-		chain.logger.Debug("reached max uncle search: remainingDistance %d", remainingDistance)
+//		chain.logger.Debug("reached max uncle search: remainingDistance %d", remainingDistance)
 		return uncles
 	}
 	if node, found := chain.BlockNode(grandParent); found {
@@ -260,7 +265,7 @@ func (chain *BlockChainInMem) findUncles(grandParent, parent *core.Byte64, remai
 							hash: childBlock.Hash(),
 							miner: childBlock.Miner(),
 							depth: childBlock.Depth().Uint64(),
-							distance: maxUncleDistance - remainingDistance,
+							distance: maxUncleDistance - remainingDistance + 1,
 							
 					})
 					uncles = append(uncles, chain.findNonDirectAncestors(childNode, remainingDistance-1, maxDepth)...)
@@ -272,11 +277,12 @@ func (chain *BlockChainInMem) findUncles(grandParent, parent *core.Byte64, remai
 	return uncles
 }
 
-func (chain *BlockChainInMem) AddBlockNode(block core.Block) error {
-	if block == nil {
+func (chain *BlockChainInMem) AddBlockNode(coreBlock core.Block) error {
+	if coreBlock == nil {
 		chain.logger.Error("attempt to add nil block!!!")
 		return core.NewCoreError(core.ERR_INVALID_BLOCK, "nil block")
 	}
+	block := coreBlock.(*core.SimpleBlock)
 	// make sure that block has computed hash
 	if block.Hash() == nil {
 		chain.logger.Error("attempt to add block without hash computed")
@@ -292,10 +298,24 @@ func (chain *BlockChainInMem) AddBlockNode(block core.Block) error {
 		chain.logger.Error("attempt to add an orphan block!!!")
 		return core.NewCoreError(core.ERR_ORPHAN_BLOCK, "orphan block")
 	} else {
-		for _, uncle := range chain.findUncles(parent.Parent(), parent.Hash(), maxUncleDistance, parent.Depth()) {
-			// TODO: process uncle list
-			chain.logger.Debug("Adding %d distant uncle: %x, miner: %x", uncle.distance, *uncle.hash, *uncle.miner)
+		// is it a newly generated block that needs uncle calculation, or block recieved from braodcast?
+		if len(block.Uncles()) > 0 {
+			for _, uncle := range block.Uncles() {
+				if found, _ := chain.db.Has(tableKey(tableBlockNode, uncle)); !found {
+					chain.logger.Error("attempt to add block with unknown uncle!!!")
+					return core.NewCoreError(core.ERR_INVALID_UNCLE, "unknown uncle")
+				}
+			}
+		} else {
+			for _, uncle := range chain.findUncles(parent.Parent(), parent.Hash(), maxUncleDistance, parent.Depth()) {
+				chain.logger.Debug("Adding %d distant uncle: %x, miner: %x", uncle.distance, *uncle.hash, *uncle.miner)
+				block.AddUncle(uncle.hash, 1)
+				// TODO: process mining reward for uncle list
+			}
+			// recompute hash
+			block.ComputeHash()
 		}
+		 
 		// add the new child node into our data store
 		child := NewBlockNode(block)
 		chain.SaveBlock(block)
@@ -303,13 +323,14 @@ func (chain *BlockChainInMem) AddBlockNode(block core.Block) error {
 		parent.AddChild(child.Hash())
 		chain.SaveBlockNode(parent)
 		chain.logger.Debug("adding a new block at depth '%d' in the block chain", child.Depth())
-		// compare current main list depth with depth of new node's list
+		// compare current main list weight with weight of new node's list
 		// to find if main list needs rebalancing
-		if chain.Depth() < child.Depth() {
+		if chain.Weight() < child.Weight() {
 			chain.logger.Debug("rebalancing the block chain after new block addition")
 			// move depth and tip of blockchain
 			*chain.td = *block.Timestamp()
 			chain.depth = child.Depth()
+			chain.weight = child.Weight()
 			chain.tip = child.Hash()
 			// update the tip in DB
 			if err := chain.db.Put(dagTip, chain.tip.Bytes()); err != nil {

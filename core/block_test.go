@@ -83,6 +83,10 @@ func TestSimpleBlockHash(t *testing.T) {
 	myNode := NewSimpleNodeInfo("test node")
 	weight, depth := uint64(23), uint64(20)
 	block := NewSimpleBlock(previous, weight, depth, 0, myNode)
+	uncle1hash, uncle1weight := BytesToByte64([]byte("uncle 1")), uint64(2)
+	uncle2hash, uncle2weight := BytesToByte64([]byte("uncle 2")), uint64(2)
+	block.AddUncle(uncle1hash, uncle1weight)
+	block.AddUncle(uncle2hash, uncle2weight)
 	block.ComputeHash()
 	if len(block.Hash()) != 64 {
 		t.Errorf("Block hash not 64 bytes: Found '%d'", block.Hash())
@@ -93,6 +97,9 @@ func TestSimpleBlockHash(t *testing.T) {
 	data = append(data, block.miner.Bytes()...)
 	data = append(data, block.timestamp.Bytes()...)
 	data = append(data, block.opCode.Bytes()...)
+	data = append(data, uncle1hash.Bytes()...)
+	data = append(data, uncle2hash.Bytes()...)
+	data = append(data, Uint64ToByte8(weight+uncle1weight+uncle2weight).Bytes()...)
 	data = append(data, block.Nonce().Bytes()...)
 	hash := sha512.Sum512(data)
 	if *block.Hash() != *BytesToByte64(hash[:]) {

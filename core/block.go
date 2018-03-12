@@ -108,6 +108,10 @@ func (b *SimpleBlock) ComputeHash() {
 	data = append(data, b.miner.Bytes()...)
 	data = append(data, b.timestamp.Bytes()...)
 	data = append(data, b.opCode.Bytes()...)
+	for _, uncle := range b.uncles {
+		data = append(data, uncle.Bytes()...)
+	}
+	data = append(data, b.weight.Bytes()...)
 	data = append(data, Uint64ToByte8(b.nonce).Bytes()...)
 	hash := sha512.Sum512(data)
 	b.hash = BytesToByte64(hash[:])
