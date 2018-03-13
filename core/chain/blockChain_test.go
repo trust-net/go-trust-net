@@ -91,7 +91,6 @@ func TestBlockChainInMemAddNode(t *testing.T) {
 	chain, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db)
 	myNode := core.NewSimpleNodeInfo("test node")
 	block := core.NewSimpleBlock(chain.genesis.Hash(), 1, 1, 0, myNode)
-	block.ComputeHash()
 	if err := chain.AddBlockNode(block); err != nil {
 		t.Errorf("Failed to add block into chain: '%s'", err)
 	}
@@ -111,7 +110,6 @@ func TestBlockChainInMemAddNodeGenesis(t *testing.T) {
 	chain, _ := NewBlockChainInMem(genesis, db)
 	myNode := core.NewSimpleNodeInfo("test node")
 	block := core.NewSimpleBlock(chain.genesis.Hash(), 1, 1, 0, myNode)
-	block.ComputeHash()
 	chain.AddBlockNode(block)
 	if *chain.Genesis().Hash() != *genesis.Hash() {
 		t.Errorf("Genesis reference not correct")
@@ -124,7 +122,6 @@ func TestBlockChainInMemAddNodeDepthUpdate(t *testing.T) {
 	chain, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db)
 	myNode := core.NewSimpleNodeInfo("test node")
 	block := core.NewSimpleBlock(chain.genesis.Hash(), 1, 1, 0, myNode)
-	block.ComputeHash()
 	chain.AddBlockNode(block)
 	if chain.Depth() != 1 {
 		t.Errorf("Failed to update depth of the chain")
@@ -137,7 +134,6 @@ func TestBlockChainInMemAddNodeTdUpdate(t *testing.T) {
 	chain, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db)
 	myNode := core.NewSimpleNodeInfo("test node")
 	block := core.NewSimpleBlock(chain.genesis.Hash(), 1, 1, 0, myNode)
-	block.ComputeHash()
 	chain.AddBlockNode(block)
 	if *chain.TD() != *block.Timestamp() {
 		t.Errorf("Failed to update TD of the chain: Expected %d, Actual %d", block.Timestamp(), chain.TD())
@@ -152,10 +148,8 @@ func TestBlockChainFlush(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	// now add descendents with 6 blocks after the genesis
 	list := makeBlocks(6, genesis.Hash(), myNode, 1, 1)
-	for i, child := range(list) {
-		if err := chain.AddBlockNode(child); err != nil {
-			t.Errorf("chain failed to add block #%d: %s", i, err)
-		}
+	if err := addChain(chain, list, myNode); err != nil {
+		t.Errorf("chain failed to add block: %s", err)
 	}
 	// reset/flush the chain
 	if err := chain.Flush(); err != nil {
@@ -184,13 +178,13 @@ func TestBlockChainFlush(t *testing.T) {
 	}
 }
 
-func TestBlockChainInMemAddNodeUncomputed(t *testing.T) {
+func TestBlockChainInMemAddNetworkNodeUncomputed(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	chain, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db)
 	myNode := core.NewSimpleNodeInfo("test node")
 	block := core.NewSimpleBlock(chain.genesis.Hash(), 1, 1, 0, myNode)
-	if err := chain.AddBlockNode(block); err == nil {
+	if err := chain.AddNetworkNode(block); err == nil {
 		t.Errorf("Failed to detected block with uncomputed hash")
 	}
 }
@@ -210,7 +204,6 @@ func TestBlockChainInMemAddNodeOrphan(t *testing.T) {
 	chain, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db)
 	myNode := core.NewSimpleNodeInfo("test node")
 	block := core.NewSimpleBlock(core.BytesToByte64([]byte("some random parent hash")), 1, 1, 0, myNode)
-	block.ComputeHash()
 	if err := chain.AddBlockNode(block); err == nil {
 		t.Errorf("Failed to detected block with non existing parent")
 	}
@@ -224,7 +217,6 @@ func TestBlockChainInMemAddNodeDuplicate(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	// add a block to chain
 	block := core.NewSimpleBlock(chain.genesis.Hash(), 1, 1, 0, myNode)
-	block.ComputeHash()
 	chain.AddBlockNode(block)
 	// try adding same block again
 	if err := chain.AddBlockNode(block); err == nil {
@@ -239,14 +231,11 @@ func TestBlockChainInMemAddNodeForwardLink(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	// add an ancestor block to chain
 	ancestor := core.NewSimpleBlock(chain.genesis.Hash(), 1, 1, 0, myNode)
-	ancestor.ComputeHash()
 	chain.AddBlockNode(ancestor)
 	// now add two child nodes to same ancestor
 	child1 := core.NewSimpleBlock(ancestor.Hash(), 2, 2, 0, myNode)
-	child1.ComputeHash()
 	chain.AddBlockNode(child1)
 	child2 := core.NewSimpleBlock(ancestor.Hash(), 2, 2, 0, myNode)
-	child2.ComputeHash()
 	chain.AddBlockNode(child2)
 	// verify that ancestor has forward link to children
 	parent, _ := chain.BlockNode(ancestor.Hash())
@@ -265,7 +254,6 @@ func makeBlocks(len int, parent *core.Byte64, miner core.NodeInfo, startWeight, 
 	nodes := make([]*core.SimpleBlock, len)
 	for i := uint64(0); i < uint64(len); i++ {
 		nodes[i] = core.NewSimpleBlock(parent, startWeight+i, startDepth+i, 0, miner)
-		nodes[i].ComputeHash()
 		parent = nodes[i].Hash()
 	}
 	return nodes
@@ -277,7 +265,6 @@ func addChain(chain *BlockChainInMem, blocks []*core.SimpleBlock, miner core.Nod
 	for i, block := range(blocks) {
 		if parent != nil {
 			block = core.NewSimpleBlock(parent.Hash(), parent.Weight().Uint64()+1, parent.Depth().Uint64()+1, 0, miner)
-			block.ComputeHash()
 		}
 		if err := chain.AddBlockNode(block); err != nil {
 			return err
@@ -295,7 +282,6 @@ func TestBlockChainInMemHeaviestChain(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	// add an ancestor block to chain
 	ancestor := core.NewSimpleBlock(chain.genesis.Hash(), 1, 1, 0, myNode)
-	ancestor.ComputeHash()
 	chain.AddBlockNode(ancestor)
 	// now add 1st chain with 6 blocks after the ancestor
 	chain1 := makeBlocks(6, ancestor.Hash(), myNode, 2, 2)
@@ -326,15 +312,12 @@ func TestBlockChainInMemRebalance(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	// add an ancestor block to chain
 	ancestor := core.NewSimpleBlock(chain.genesis.Hash(), 1, 1, 0, myNode)
-	ancestor.ComputeHash()
 	chain.AddBlockNode(ancestor)
 	// add 1st child to ancestor
 	child1 := core.NewSimpleBlock(ancestor.Hash(), 2, 2, 0, myNode)
-	child1.ComputeHash()
 	chain.AddBlockNode(child1)
 	// add 2nd child to ancestor
 	child2 := core.NewSimpleBlock(ancestor.Hash(), 2, 2, 0, myNode)
-	child2.ComputeHash()
 	chain.AddBlockNode(child2)
 	// verify that blockchain points to 1st child as tip
 	if *chain.Tip().Hash() != *child1.Hash() {
@@ -351,7 +334,6 @@ func TestBlockChainInMemRebalance(t *testing.T) {
 	
 	// now add new block to child2 (current non main list)
 	child3 := core.NewSimpleBlock(child2.Hash(), child2.Weight().Uint64()+1, child2.Depth().Uint64()+1, 0, myNode)
-	child3.ComputeHash()
 	chain.AddBlockNode(child3)
 	// verify that blockchain points to 3rd child as tip
 	if *chain.Tip().Hash() != *child3.Hash() {
@@ -379,21 +361,16 @@ func TestBlockChainInMemWalkThroughMainListOnly(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	// add an ancestor block to chain
 	ancestor := core.NewSimpleBlock(chain.genesis.Hash(), 1, 1, 0, myNode)
-	ancestor.ComputeHash()
 	chain.AddBlockNode(ancestor)
 	// now add 1st chain with 2 blocks after the ancestor
 	chain1 := makeBlocks(2, ancestor.Hash(), myNode, 2, 2)
-	for i, child := range(chain1) {
-		if err := chain.AddBlockNode(child); err != nil {
-			t.Errorf("1st chain failed to add block #%d: %s", i, err)
-		}
+	if err := addChain(chain, chain1, myNode); err != nil {
+		t.Errorf("chain1 failed to add block: %s", err)
 	}
 	// now add 2nd chain with 1 blocks after the ancestor
 	chain2 := makeBlocks(1, ancestor.Hash(), myNode, 2, 2)
-	for i, child := range(chain2) {
-		if err := chain.AddBlockNode(child); err != nil {
-			t.Errorf("2nd chain failed to add block #%d: %s", i, err)
-		}
+	if err := addChain(chain, chain2, myNode); err != nil {
+		t.Errorf("chain2 failed to add block: %s", err)
 	}
 	// ask for list of blocks starting at the ancestor
 	// should skip ancestor qnd return chain1 nodes (2 nodes)
@@ -415,10 +392,8 @@ func TestBlockChainInMemWalkThroughOverMax(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	// now add a chain with more than max node
 	blocks := makeBlocks(maxBlocks+1, chain.genesis.Hash(), myNode, 1, 1)
-	for i, child := range(blocks) {
-		if err := chain.AddBlockNode(child); err != nil {
-			t.Errorf("chain failed to add block #%d: %s", i, err)
-		}
+	if err := addChain(chain, blocks, myNode); err != nil {
+		t.Errorf("chain2 failed to add block: %s", err)
 	}
 	// ask for list of blocks more than maxBlocks limit
 	syncBlocks := chain.Blocks(chain.genesis.Hash(), maxBlocks+10)
@@ -429,7 +404,7 @@ func TestBlockChainInMemWalkThroughOverMax(t *testing.T) {
 
 
 func TestBlockChainInMemConsensus(t *testing.T) {
-	log.SetLogLevel(log.DEBUG)
+	log.SetLogLevel(log.NONE)
 	// simulate 3 different concurrent nodes updating their individual blockchain instances
 	db1, _ := db.NewDatabaseInMem()
 	chain1, _ := NewBlockChainInMem(testGenesisBlock(0x20000), db1)
@@ -454,7 +429,6 @@ func TestBlockChainInMemConsensus(t *testing.T) {
 		if (counter+1) % 7 == 0 {
 			block = core.NewSimpleBlock(parent.Hash(), parent.Weight()+1, parent.Depth()+1, 0, myNode)
 		}
-		block.ComputeHash()
 		// simulate broadcast to all nodes
 		switch myChain {
 			case chain1:
@@ -503,6 +477,8 @@ func TestBlockChainInMemConsensus(t *testing.T) {
 		go nodeFunc(chain1, node1)
 		go nodeFunc(chain2, node2)
 		go nodeFunc(chain3, node3)
+		// need to make sure that each node has finished creating and broadcasting current block, before creating next block
+		for counter < (i+1)*3 {time.Sleep(time.Millisecond * 100)}
 	}
 	// wait for all nodes to finish
 	for counter < 30 {time.Sleep(time.Millisecond * 100)}
@@ -590,10 +566,8 @@ func TestBlockChainAddBlockWithUncles(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	// build chain 1 with 5 deep
 	chain1blocks := makeBlocks(5, chain.genesis.Hash(), myNode, 1, 1)
-	for i, block := range(chain1blocks) {
-		if err := chain.AddBlockNode(block); err != nil {
-			t.Errorf("chain failed to add block #%d: %s", i, err)
-		}
+	if err := addChain(chain, chain1blocks, myNode); err != nil {
+		t.Errorf("chain failed to add block: %s", err)
 	}
 	// add a new uncle block to 3rd block in main chain
 	uncle := makeBlocks(1, chain1blocks[2].Hash(), myNode, chain1blocks[2].Weight().Uint64()+1, chain1blocks[2].Depth().Uint64()+1)[0]
@@ -607,7 +581,7 @@ func TestBlockChainAddBlockWithUncles(t *testing.T) {
 	chain.AddBlockNode(child)
 
 	// verify that chain addition recomputed hash
-	if *origHash == *child.Hash() {
+	if origHash == child.Hash() {
 		t.Errorf("chain did not recompute hash when adding block with uncles")
 	}
 	// fetch the child back from blockchain
@@ -631,10 +605,8 @@ func TestBlockChainAddNetworkBlockWithUnknownUncle(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	// build chain 1 with 5 deep
 	chain1blocks := makeBlocks(5, chain.genesis.Hash(), myNode, 1, 1)
-	for i, block := range(chain1blocks) {
-		if err := chain.AddBlockNode(block); err != nil {
-			t.Errorf("chain failed to add block #%d: %s", i, err)
-		}
+	if err := addChain(chain, chain1blocks, myNode); err != nil {
+		t.Errorf("chain failed to add block: %s", err)
 	}
 	// prepare a new child block to be added to chain
 	log.SetLogLevel(log.NONE)
@@ -659,10 +631,8 @@ func TestBlockChainRebalanceByWeight(t *testing.T) {
 	myNode := core.NewSimpleNodeInfo("test node")
 	// build chain 1 with 5 deep
 	chain1blocks := makeBlocks(5, chain.genesis.Hash(), myNode, 1, 1)
-	for i, block := range(chain1blocks) {
-		if err := chain.AddBlockNode(block); err != nil {
-			t.Errorf("chain failed to add block #%d: %s", i, err)
-		}
+	if err := addChain(chain, chain1blocks, myNode); err != nil {
+		t.Errorf("chain failed to add block: %s", err)
 	}
 	// now add a new child block to main chain
 	log.SetLogLevel(log.NONE)

@@ -332,17 +332,13 @@ func (chain *BlockChainInMem) AddBlockNode(coreBlock core.Block) error {
 		return core.NewCoreError(core.ERR_INVALID_BLOCK, "nil block")
 	}
 	block := coreBlock.(*core.SimpleBlock)
-	// make sure that block has computed hash
-	if block.Hash() == nil {
-		chain.logger.Error("attempt to add block without hash computed")
-		return core.NewCoreError(core.ERR_INVALID_HASH, "block does not have hash computed")
+	// make sure that block has nil hash
+	if block.Hash() != nil {
+		chain.logger.Error("attempt to add new block with precomputed hash")
+		return core.NewCoreError(core.ERR_INVALID_BLOCK, "block has precomputed hash")
 	}
 	chain.lock.Lock()
 	defer chain.lock.Unlock()
-	if found, _ := chain.db.Has(tableKey(tableBlockNode, block.Hash())); found {
-		chain.logger.Error("attempt to add duplicate block!!!")
-		return core.NewCoreError(core.ERR_DUPLICATE_BLOCK, "duplicate block")
-	}
 	if parent, found := chain.BlockNode(block.ParentHash()); !found {
 		chain.logger.Error("attempt to add an orphan block!!!")
 		return core.NewCoreError(core.ERR_ORPHAN_BLOCK, "orphan block")
@@ -357,9 +353,10 @@ func (chain *BlockChainInMem) AddBlockNode(coreBlock core.Block) error {
 			block.AddUncle(uncle.hash, 1)
 			// TODO: process mining reward for uncle list
 		}
-		if len(block.Uncles()) > 0 {
-			// recompute hash
-			block.ComputeHash()
+		block.ComputeHash()
+		if found, _ := chain.db.Has(tableKey(tableBlockNode, block.Hash())); found {
+			chain.logger.Error("attempt to add duplicate block!!!")
+			return core.NewCoreError(core.ERR_DUPLICATE_BLOCK, "duplicate block")
 		}
 		return chain.addBlock(block, parent)
 	}

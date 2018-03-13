@@ -115,7 +115,6 @@ func (mgr *CountrProtocolManager) delta(opCode *core.Byte8) bool {
 	// create new block and add to my blockchain
 	block := core.NewSimpleBlock(mgr.chain.Tip().Hash(), mgr.chain.Tip().Weight()+1, mgr.chain.Tip().Depth()+1, 0, mgr.miner)
 	block.AddTransaction(opCode)
-	block.ComputeHash()
 	if err := mgr.chain.AddBlockNode(block); err != nil {
 		mgr.logger.Error("Failed to increment counter: %s", err.Error())
 		return false
