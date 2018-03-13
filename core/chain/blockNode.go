@@ -9,17 +9,19 @@ type BlockNode struct {
 	HASH *core.Byte64
 	PARENT *core.Byte64
 	DEPTH uint64
+	WEIGHT uint64
 	ISMAINLIST bool
 	CHILDREN	 []*core.Byte64
 	BLOCK *core.Byte64
 }
 
-func NewBlockNode(block core.Block, depth uint64) *BlockNode {
+func NewBlockNode(block core.Block) *BlockNode {
 	return &BlockNode{
 		HASH: block.Hash(),
 		PARENT: block.ParentHash(),
 		BLOCK: block.Hash(),
-		DEPTH: depth,
+		WEIGHT: block.Weight().Uint64(),
+		DEPTH: block.Depth().Uint64(),
 		ISMAINLIST: false,
 		CHILDREN: make([]*core.Byte64,0),
 	}
@@ -47,6 +49,10 @@ func (bn *BlockNode) Parent() *core.Byte64 {
 
 func (bn *BlockNode) Depth() uint64 {
 	return bn.DEPTH
+}
+
+func (bn *BlockNode) Weight() uint64 {
+	return bn.WEIGHT
 }
 
 func (bn *BlockNode) Children() []*core.Byte64 {

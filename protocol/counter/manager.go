@@ -57,7 +57,7 @@ func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 	mgr := CountrProtocolManager{
 		state: worldState{0},
 		miner: core.NewSimpleNodeInfo(miner),
-		genesis: core.NewSimpleBlock(core.BytesToByte64(nil), genesisTimeStamp, core.NewSimpleNodeInfo("")),
+		genesis: core.NewSimpleBlock(core.BytesToByte64(nil), 0, 0, genesisTimeStamp, core.NewSimpleNodeInfo("")),
 	}
 	mgr.logger = log.NewLogger(mgr)
 	mgr.logger.Debug("Created new instance of counter protocol manager")
@@ -113,9 +113,8 @@ func (mgr *CountrProtocolManager) Shutdown() {
 
 func (mgr *CountrProtocolManager) delta(opCode *core.Byte8) bool {
 	// create new block and add to my blockchain
-	block := core.NewSimpleBlock(mgr.chain.Tip().Hash(), 0, mgr.miner)
+	block := core.NewSimpleBlock(mgr.chain.Tip().Hash(), mgr.chain.Tip().Weight()+1, mgr.chain.Tip().Depth()+1, 0, mgr.miner)
 	block.AddTransaction(opCode)
-	block.ComputeHash()
 	if err := mgr.chain.AddBlockNode(block); err != nil {
 		mgr.logger.Error("Failed to increment counter: %s", err.Error())
 		return false
@@ -168,7 +167,7 @@ func (mgr *CountrProtocolManager) broadCast(block core.Block) int {
 }
 
 func (mgr *CountrProtocolManager) getHandshakeMsg() *protocol.HandshakeMsg {
-	handshakeMsg.TotalWeight = *core.Uint64ToByte8(mgr.chain.Depth())
+	handshakeMsg.TotalWeight = *core.Uint64ToByte8(mgr.chain.Weight())
 	return &handshakeMsg
 }
 
@@ -280,11 +279,15 @@ func (mgr *CountrProtocolManager) processBlockSpec(spec *core.BlockSpec, from *p
 				mgr.logger.Error("Invalid opcode '%d' from '%s'", block.OpCode().Uint64(), from.ID())
 				return 0, nil, protocol.NewProtocolError(protocol.ErrorInvalidResponse, "GetBlocksResponseMsg has invalid opcode")
 		}
-		// add block to our blockchain
-		if err := mgr.chain.AddBlockNode(block); err != nil {
+		// add network block to our blockchain
+		if err := mgr.chain.AddNetworkNode(block); err != nil {
 			mgr.logger.Error("Failed to add new block from '%s'", from.ID())
 			return delta, block.Hash(), err
 		}
+		// mark the sender has having seen this message
+		from.AddTx(block.Hash())
+		// broadcast message to other peers
+		mgr.broadCast(block)
 		// update our counter
 		return delta, block.Hash(), nil	
 }

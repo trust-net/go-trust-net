@@ -11,6 +11,7 @@ const (
 	ERR_INVALID_BLOCK = 0x04
 	ERR_DB_UNINITIALIZED = 0x05
 	ERR_DB_CORRUPTED = 0x06
+	ERR_INVALID_UNCLE = 0x07
 )
 
 type CoreError struct {

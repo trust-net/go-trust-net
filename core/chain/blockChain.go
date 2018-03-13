@@ -12,6 +12,7 @@ import (
 
 const (
 	maxBlocks = 100
+	maxUncleDistance = uint64(5)
 )
 
 var tableBlockNode = []byte("BlockNode-")
@@ -32,6 +33,7 @@ type BlockChainInMem struct {
 	tip *core.Byte64
 	td	*core.Byte8
 	depth uint64
+	weight uint64
 	db db.Database
 	lock sync.RWMutex
 	logger log.Logger
@@ -44,7 +46,7 @@ type BlockChainInMem struct {
 // on all instances of this blockchain
 func NewBlockChainInMem(genesis core.Block, db db.Database) (*BlockChainInMem, error) {
 	chain := &BlockChainInMem{
-		genesis: NewBlockNode(genesis, 0),
+		genesis: NewBlockNode(genesis),
 		depth: 0,
 		td: core.BytesToByte8(genesis.Timestamp().Bytes()),
 		db: db,
@@ -124,6 +126,10 @@ func (chain *BlockChainInMem) Flush() error {
 
 func (chain *BlockChainInMem) Depth() uint64 {
 	return chain.depth
+}
+
+func (chain *BlockChainInMem) Weight() uint64 {
+	return chain.weight
 }
 
 func (chain *BlockChainInMem) TD() *core.Byte8 {
@@ -210,11 +216,159 @@ func (chain *BlockChainInMem) SaveBlock(block core.Block) error {
 	}
 }
 
-func (chain *BlockChainInMem) AddBlockNode(block core.Block) error {
-	if block == nil {
+type uncle struct {
+	hash *core.Byte64
+	miner *core.Byte64
+	depth uint64
+	distance uint64
+}
+
+func (chain *BlockChainInMem) findNonDirectAncestors(childNode *core.Byte64, remainingDistance, maxDepth uint64) []uncle {
+	uncles := make([]uncle, 0, 5)
+	if remainingDistance == 0 {
+		chain.logger.Debug("reached max uncle search: remainingDistance %d", remainingDistance)
+		return uncles
+	}
+	
+	if node, found := chain.BlockNode(childNode); found {
+		for _, grandChild := range node.Children() {
+			if grandChild != nil {
+				if grandChildBlock, found := chain.Block(grandChild); found && grandChildBlock.Depth().Uint64() <= maxDepth {
+					chain.logger.Debug("Found uncle: %x, remainingDistance: %d, depth %d", *grandChildBlock.Hash(), remainingDistance, grandChildBlock.Depth().Uint64())
+					uncles = append(uncles, uncle{
+							hash: grandChildBlock.Hash(),
+							miner: grandChildBlock.Miner(),
+							depth: grandChildBlock.Depth().Uint64(),
+							distance: maxUncleDistance - remainingDistance,
+							
+					})
+					uncles = append(uncles, chain.findNonDirectAncestors(grandChild, remainingDistance-1, maxDepth)...)
+				} 
+			}
+		}
+	}
+	return uncles
+}
+
+func (chain *BlockChainInMem) findUncles(grandParent, parent *core.Byte64, remainingDistance, maxDepth uint64) []uncle {
+	uncles := make([]uncle, 0, 5)
+	if remainingDistance == 0 {
+//		chain.logger.Debug("reached max uncle search: remainingDistance %d", remainingDistance)
+		return uncles
+	}
+	if node, found := chain.BlockNode(grandParent); found {
+		for _, childNode := range node.Children() {
+			if childNode != nil && *childNode != *parent {
+				if childBlock, found := chain.Block(childNode); found {
+					chain.logger.Debug("Found uncle: %x, remainingDistance: %d, depth %d", *childBlock.Hash(), remainingDistance, childBlock.Depth().Uint64())
+					uncles = append(uncles, uncle{
+							hash: childBlock.Hash(),
+							miner: childBlock.Miner(),
+							depth: childBlock.Depth().Uint64(),
+							distance: maxUncleDistance - remainingDistance + 1,
+							
+					})
+					uncles = append(uncles, chain.findNonDirectAncestors(childNode, remainingDistance-1, maxDepth)...)
+				} 
+			}
+		}
+		uncles = append(uncles, chain.findUncles(node.Parent(), node.Hash(), remainingDistance-1, maxDepth)...)
+	}
+	return uncles
+}
+
+func (chain *BlockChainInMem) addBlock(block *core.SimpleBlock, parent *BlockNode) error {
+	// add the new child node into our data store
+	child := NewBlockNode(block)
+	chain.SaveBlock(block)
+	// update parent's children list
+	parent.AddChild(child.Hash())
+	chain.SaveBlockNode(parent)
+	chain.logger.Debug("adding a new block at depth '%d' in the block chain", child.Depth())
+	// compare current main list weight with weight of new node's list
+	// to find if main list needs rebalancing
+	if chain.Weight() < child.Weight() {
+		chain.logger.Debug("rebalancing the block chain after new block addition")
+		// move depth and tip of blockchain
+		*chain.td = *block.Timestamp()
+		chain.depth = child.Depth()
+		chain.weight = child.Weight()
+		chain.tip = child.Hash()
+		// update the tip in DB
+		if err := chain.db.Put(dagTip, chain.tip.Bytes()); err != nil {
+			return core.NewCoreError(core.ERR_DB_CORRUPTED, "failed to update tip in DB")
+		}
+		
+		// walk up the ancestor list setting them up as main list nodes
+		// until find the first ancestor that is already on main list
+		child.SetMainList(true)
+		mainListParent := child
+		for !parent.IsMainList() {
+			parent.SetMainList(true)
+			chain.SaveBlockNode(parent)
+			mainListParent = parent
+			parent, _ = chain.BlockNode(parent.Parent())
+		}
+		// find the original main list child
+		chain.SaveBlockNode(child)
+		child = chain.findMainListChild(parent, mainListParent)
+		// walk down the old main list and reset flag
+		for child != nil {
+			chain.logger.Debug("removing block at depth '%d' from old main list", child.Depth())
+			child.SetMainList(false)
+			chain.SaveBlockNode(child)
+			child = chain.findMainListChild(child, nil)
+		}
+	} else {
+		chain.SaveBlockNode(child)
+		chain.logger.Debug("block is not on mainlist")
+	}
+	return nil
+}
+
+func (chain *BlockChainInMem) AddBlockNode(coreBlock core.Block) error {
+	if coreBlock == nil {
 		chain.logger.Error("attempt to add nil block!!!")
 		return core.NewCoreError(core.ERR_INVALID_BLOCK, "nil block")
 	}
+	block := coreBlock.(*core.SimpleBlock)
+	// make sure that block has nil hash
+	if block.Hash() != nil {
+		chain.logger.Error("attempt to add new block with precomputed hash")
+		return core.NewCoreError(core.ERR_INVALID_BLOCK, "block has precomputed hash")
+	}
+	chain.lock.Lock()
+	defer chain.lock.Unlock()
+	if parent, found := chain.BlockNode(block.ParentHash()); !found {
+		chain.logger.Error("attempt to add an orphan block!!!")
+		return core.NewCoreError(core.ERR_ORPHAN_BLOCK, "orphan block")
+	} else {
+		if len(block.Uncles()) != 0 {
+			chain.logger.Error("new block already has %d uncles!!!", len(block.Uncles()))
+			return core.NewCoreError(core.ERR_INVALID_BLOCK, "new block cannot have uncles")
+		}
+		// find uncles, if available, and adjust weight
+		for _, uncle := range chain.findUncles(parent.Parent(), parent.Hash(), maxUncleDistance, parent.Depth()) {
+			chain.logger.Debug("Adding %d distant uncle: %x, miner: %x", uncle.distance, *uncle.hash, *uncle.miner)
+			block.AddUncle(uncle.hash, 1)
+			// TODO: process mining reward for uncle list
+		}
+		block.ComputeHash()
+		if found, _ := chain.db.Has(tableKey(tableBlockNode, block.Hash())); found {
+			chain.logger.Error("attempt to add duplicate block!!!")
+			return core.NewCoreError(core.ERR_DUPLICATE_BLOCK, "duplicate block")
+		}
+		return chain.addBlock(block, parent)
+	}
+}
+
+
+func (chain *BlockChainInMem) AddNetworkNode(coreBlock core.Block) error {
+	if coreBlock == nil {
+		chain.logger.Error("attempt to add nil block!!!")
+		return core.NewCoreError(core.ERR_INVALID_BLOCK, "nil block")
+	}
+	block := coreBlock.(*core.SimpleBlock)
 	// make sure that block has computed hash
 	if block.Hash() == nil {
 		chain.logger.Error("attempt to add block without hash computed")
@@ -230,52 +384,16 @@ func (chain *BlockChainInMem) AddBlockNode(block core.Block) error {
 		chain.logger.Error("attempt to add an orphan block!!!")
 		return core.NewCoreError(core.ERR_ORPHAN_BLOCK, "orphan block")
 	} else {
-		// add the new child node into our data store
-		child := NewBlockNode(block, parent.Depth()+1)
-		chain.SaveBlock(block)
-		// update parent's children list
-		parent.AddChild(child.Hash())
-		chain.SaveBlockNode(parent)
-		chain.logger.Debug("adding a new block at depth '%d' in the block chain", child.Depth())
-		// compare current main list depth with depth of new node's list
-		// to find if main list needs rebalancing
-		if chain.Depth() < child.Depth() {
-			chain.logger.Debug("rebalancing the block chain after new block addition")
-			// move depth and tip of blockchain
-			*chain.td = *block.Timestamp()
-			chain.depth = child.Depth()
-			chain.tip = child.Hash()
-			// update the tip in DB
-			if err := chain.db.Put(dagTip, chain.tip.Bytes()); err != nil {
-				return core.NewCoreError(core.ERR_DB_CORRUPTED, "failed to update tip in DB")
+		// validate uncles are known and within distance
+		for _, uncle := range block.Uncles() {
+			if found, _ := chain.db.Has(tableKey(tableBlockNode, uncle)); !found {
+				chain.logger.Error("attempt to add block with unknown uncle!!!")
+				return core.NewCoreError(core.ERR_INVALID_UNCLE, "unknown uncle")
 			}
-			
-			// walk up the ancestor list setting them up as main list nodes
-			// until find the first ancestor that is already on main list
-			child.SetMainList(true)
-			mainListParent := child
-			for !parent.IsMainList() {
-				parent.SetMainList(true)
-				chain.SaveBlockNode(parent)
-				mainListParent = parent
-				parent, _ = chain.BlockNode(parent.Parent())
-			}
-			// find the original main list child
-			chain.SaveBlockNode(child)
-			child = chain.findMainListChild(parent, mainListParent)
-			// walk down the old main list and reset flag
-			for child != nil {
-				chain.logger.Debug("removing block at depth '%d' from old main list", child.Depth())
-				child.SetMainList(false)
-				chain.SaveBlockNode(child)
-				child = chain.findMainListChild(child, nil)
-			}
-		} else {
-			chain.SaveBlockNode(child)
-			chain.logger.Debug("block is not on mainlist")
+			// TODO: process mining reward for uncle list
 		}
+		return chain.addBlock(block, parent)
 	}
-	return nil
 }
 
 // TODO: optimize this by adding mainlist flag in the children itself, so that dont have to make 2nd DB dip just to find that
