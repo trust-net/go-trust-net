@@ -2,6 +2,7 @@ package trie
 
 import (
     "testing"
+    "github.com/trust-net/go-trust-net/core"
 )
 
 func TestMakeHex(t *testing.T) {
@@ -109,5 +110,73 @@ func testWorldStateDeleteNotExisting(t *testing.T, ws WorldState) {
 	ws.Delete([]byte("non existing key"))
 	if origHash != ws.Hash() {
 		t.Errorf("World state hash changed after non existing key deletion: Expected %x, Found %x", origHash, ws.Hash())
+	}
+}
+
+
+func TestInMemWorldStateRebase(t *testing.T) {
+	testWorldStateRebase(t, NewInMemWorldState())
+}
+
+func testWorldStateRebase(t *testing.T, ws WorldState) {
+	// insert some key/value pair into world state
+	ws.Update([]byte("key1"), []byte("value1"))
+	lastState := ws.Update([]byte("deleteMe"), []byte("to be deleted"))
+	// not lets update the key/value to change world state
+	ws.Update([]byte("key1"), []byte("value2"))
+	ws.Update([]byte("key2"), []byte("another value"))
+	ws.Delete([]byte("deleteMe"))
+	// lets fetch the keys to make sure they are correctly upserted
+	value, err := ws.Lookup([]byte("key1"))
+	if err != nil {
+		t.Errorf("Lookup of updated key1 failed: %s", err)
+	}
+	if string(value) != "value2" {
+		t.Errorf("Incorrect update: Expected `%s`, Found `%s`", "value2", value)		
+	}
+	value, err = ws.Lookup([]byte("key2"))
+	if err != nil {
+		t.Errorf("Lookup of updated key2 failed: %s", err)
+	}
+	if string(value) != "another value" {
+		t.Errorf("Incorrect update: Expected `%s`, Found `%s`", "another value", value)		
+	}
+	_, err = ws.Lookup([]byte("deleteMe"))
+	if err == nil {
+		t.Errorf("Lookup of deleted key did not fail")
+	}
+	// lets rebase to older state
+	if err = ws.Rebase(lastState); err != nil {
+		t.Errorf("Rebase failed: %s", err)
+	}
+	// lets query world state to make sure it has been reverted to last state
+	value, err = ws.Lookup([]byte("key1"))
+	if err != nil {
+		t.Errorf("Lookup of original key1 failed: %s", err)
+	}
+	if string(value) != "value1" {
+		t.Errorf("Incorrect rebased value: Expected `%s`, Found `%s`", "value1", value)
+	}
+	_, err = ws.Lookup([]byte("key2"))
+	if err == nil {
+		t.Errorf("Lookup of non existing key in last state did not fail")
+	}
+	value, err = ws.Lookup([]byte("deleteMe"))
+	if err != nil {
+		t.Errorf("Lookup of original deleteMe failed: %s", err)
+	}
+	if string(value) != "to be deleted" {
+		t.Errorf("Incorrect rebased value: Expected `%s`, Found `%s`", "to be deleted", value)		
+	}
+}
+
+func TestInMemWorldStateRebaseNotExisting(t *testing.T) {
+	testWorldStateRebaseNotExisting(t, NewInMemWorldState())
+}
+
+func testWorldStateRebaseNotExisting(t *testing.T, ws WorldState) {
+	// try rebasing to some non existing state
+	if err := ws.Rebase(*core.BytesToByte64([]byte("invalid state"))); err == nil {
+		t.Errorf("Rebase to invalid state did not fail")
 	}
 }

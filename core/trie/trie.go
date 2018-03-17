@@ -18,4 +18,7 @@ type WorldState interface {
 	Lookup(key []byte) ([]byte, error)
 	// a getter for current world state cryptographic signature (i.e. root hash)
 	Hash() core.Byte64
+	// rebase the world state to a different root hash
+	// returns an error if provided root hash is not a valid existing hash
+	Rebase(hash core.Byte64) error
 }

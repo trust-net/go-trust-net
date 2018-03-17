@@ -159,3 +159,13 @@ func (t *InMemWorldState) lookupDepthFirst(currNode node, keyHex []byte) []byte 
 func (t *InMemWorldState) Hash() core.Byte64 {
 	return t.root
 }
+
+func (t *InMemWorldState) Rebase(hash core.Byte64) error {
+	// lookup node for the provided hash
+	if _, ok := t.db[hash]; !ok {
+		return core.NewCoreError(ERR_NOT_FOUND, "key does not exists")
+	}
+	// node exists, so we can rebase
+	t.root = hash
+	return nil
+}
