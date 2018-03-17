@@ -3,6 +3,7 @@ package trie
 import (
     "testing"
     "github.com/trust-net/go-trust-net/core"
+	"github.com/trust-net/go-trust-net/db"
 )
 
 func TestMakeHex(t *testing.T) {
@@ -21,11 +22,20 @@ func TestMakeHex(t *testing.T) {
 	}
 }
 
-func TestEmptyInMemWorldState(t *testing.T) {
-	testEmptyWorldState(t, NewInMemWorldState())
+func TestEmptyMptWorldState(t *testing.T) {
+	db, _ := db.NewDatabaseInMem()
+//	ws, err := NewMptWorldState(db)
+//	if err != nil {
+//		t.Errorf("Failed to create instance: %s", err)
+//		return
+//	}
+	testEmptyWorldState(t, NewMptWorldState(db))
 }
 
 func testEmptyWorldState(t *testing.T, ws WorldState) {
+	if ws == nil {
+		t.Errorf("Failed to create instance")
+	}
 	// create an empty node
 	node := node{}
 	// world state root hash should match empty node's hash
@@ -34,8 +44,9 @@ func testEmptyWorldState(t *testing.T, ws WorldState) {
 	}
 }
 
-func TestInMemWorldStateInsert(t *testing.T) {
-	testWorldStateInsert(t, NewInMemWorldState())
+func TestMptWorldStateInsert(t *testing.T) {
+	db, _ := db.NewDatabaseInMem()
+	testWorldStateInsert(t, NewMptWorldState(db))
 }
 
 func testWorldStateInsert(t *testing.T, ws WorldState) {
@@ -56,8 +67,9 @@ func testWorldStateInsert(t *testing.T, ws WorldState) {
 	}
 }
 
-func TestInMemWorldStateInvalidLookup(t *testing.T) {
-	testWorldStateInvalidLookup(t, NewInMemWorldState())
+func TestMptWorldStateInvalidLookup(t *testing.T) {
+	db, _ := db.NewDatabaseInMem()
+	testWorldStateInvalidLookup(t, NewMptWorldState(db))
 }
 
 func testWorldStateInvalidLookup(t *testing.T, ws WorldState) {
@@ -68,8 +80,9 @@ func testWorldStateInvalidLookup(t *testing.T, ws WorldState) {
 	}
 }
 
-func TestInMemWorldStateDeleteAfterInsert(t *testing.T) {
-	testWorldStateDeleteAfterInsert(t, NewInMemWorldState())
+func TestMptWorldStateDeleteAfterInsert(t *testing.T) {
+	db, _ := db.NewDatabaseInMem()
+	testWorldStateDeleteAfterInsert(t, NewMptWorldState(db))
 }
 
 func testWorldStateDeleteAfterInsert(t *testing.T, ws WorldState) {
@@ -93,8 +106,9 @@ func testWorldStateDeleteAfterInsert(t *testing.T, ws WorldState) {
 	}
 }
 
-func TestInMemWorldStateDeleteNotExisting(t *testing.T) {
-	testWorldStateDeleteNotExisting(t, NewInMemWorldState())
+func TestMptWorldStateDeleteNotExisting(t *testing.T) {
+	db, _ := db.NewDatabaseInMem()
+	testWorldStateDeleteNotExisting(t, NewMptWorldState(db))
 }
 
 func testWorldStateDeleteNotExisting(t *testing.T, ws WorldState) {
@@ -114,14 +128,16 @@ func testWorldStateDeleteNotExisting(t *testing.T, ws WorldState) {
 }
 
 
-func TestInMemWorldStateRebase(t *testing.T) {
-	testWorldStateRebase(t, NewInMemWorldState())
+func TestMptWorldStateRebase(t *testing.T) {
+	db, _ := db.NewDatabaseInMem()
+	testWorldStateRebase(t, NewMptWorldState(db))
 }
 
 func testWorldStateRebase(t *testing.T, ws WorldState) {
 	// insert some key/value pair into world state
 	ws.Update([]byte("key1"), []byte("value1"))
-	lastState := ws.Update([]byte("deleteMe"), []byte("to be deleted"))
+	ws.Update([]byte("deleteMe"), []byte("to be deleted"))
+	lastState := ws.Hash()
 	// not lets update the key/value to change world state
 	ws.Update([]byte("key1"), []byte("value2"))
 	ws.Update([]byte("key2"), []byte("another value"))
@@ -170,8 +186,9 @@ func testWorldStateRebase(t *testing.T, ws WorldState) {
 	}
 }
 
-func TestInMemWorldStateRebaseNotExisting(t *testing.T) {
-	testWorldStateRebaseNotExisting(t, NewInMemWorldState())
+func TestMptWorldStateRebaseNotExisting(t *testing.T) {
+	db, _ := db.NewDatabaseInMem()
+	testWorldStateRebaseNotExisting(t, NewMptWorldState(db))
 }
 
 func testWorldStateRebaseNotExisting(t *testing.T, ws WorldState) {
