@@ -21,4 +21,7 @@ type WorldState interface {
 	// rebase the world state to a different root hash
 	// returns an error if provided root hash is not a valid existing hash
 	Rebase(hash core.Byte64) error
+	// cleanup the tombstoned nodes in the underlying data structure
+	// from specified world state hash
+	Cleanup(hash core.Byte64) error
 }

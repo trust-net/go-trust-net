@@ -12,11 +12,14 @@ import (
 
 var (
 	null = *core.BytesToByte64(nil)
+	marked = byte(0x01)
+	unmarked byte
 )
 
 type node struct {
 	Idxs [16] core.Byte64
 	Value []byte
+	Tombstone byte
 }
 
 
@@ -90,6 +93,14 @@ func (t *MptWorldState) get(hash *core.Byte64) (*node, bool) {
 	}
 }
 
+func (t *MptWorldState) tombStone(currNode *node) {
+	currNode.Tombstone = marked
+	if err := t.put(currNode.hash(), currNode); err != nil {
+		t.logger.Error("failed to mark tombstone on node: %s", err.Error())
+	}
+	currNode.Tombstone = unmarked
+}
+
 func makeHex(data []byte) []byte {
 	l := len(data)*2
 	var nibbles = make([]byte, l)
@@ -107,10 +118,7 @@ func (t *MptWorldState) Update(key, value []byte) core.Byte64 {
 	// convert key into hexadecimal nibbles
 	keyHex := makeHex(key)
 	if newHash := t.updateDepthFirst(t.rootNode, keyHex, value); newHash != null {
-//		if newNode, ok := t.get(&newHash); ok {
-			t.rootHash = &newHash
-//			t.rootNode = newNode
-//		}
+		t.rootHash = &newHash
 	}
 	return *t.rootHash
 }
@@ -118,6 +126,8 @@ func (t *MptWorldState) Update(key, value []byte) core.Byte64 {
 func (t *MptWorldState) updateDepthFirst(currNode *node, keyHex, value []byte) core.Byte64 {
 	// check if we have reached the end of key
 	if len(keyHex) == 0 {
+		// first mark the tomstone on the node
+		t.tombStone(currNode)
 		// update the node value
 		currNode.Value = value
 		// save the node into db
@@ -141,6 +151,8 @@ func (t *MptWorldState) updateDepthFirst(currNode *node, keyHex, value []byte) c
 	if childHash == null {
 		return null
 	}
+	// first mark the tomstone on the node
+	t.tombStone(currNode)
 	// update current node's key index with new hash of child node
 	currNode.Idxs[keyHex[0]] = childHash
 	// recompute hash for the current node after child hash update
@@ -161,10 +173,7 @@ func (t *MptWorldState) Delete(key []byte) core.Byte64 {
 	// convert key into hexadecimal nibbles
 	keyHex := makeHex(key)
 	if newHash := t.deleteDepthFirst(t.rootNode, keyHex); newHash != null {
-//		if newNode, ok := t.get(&newHash); ok {
-			t.rootHash = &newHash
-//			t.rootNode = newNode
-//		}
+		t.rootHash = &newHash
 	}
 	return *t.rootHash
 }
@@ -172,6 +181,8 @@ func (t *MptWorldState) Delete(key []byte) core.Byte64 {
 func (t *MptWorldState) deleteDepthFirst(currNode *node, keyHex []byte) core.Byte64 {
 	// check if we have reached the end of key
 	if len(keyHex) == 0 {
+		// first mark the tomstone on the node
+		t.tombStone(currNode)
 		// delete the node value
 		currNode.Value = nil
 		// save the node into db
@@ -195,6 +206,8 @@ func (t *MptWorldState) deleteDepthFirst(currNode *node, keyHex []byte) core.Byt
 		if childHash == null {
 			return null
 		}
+		// first mark the tomstone on the node
+		t.tombStone(currNode)
 		// update current node's key index with new hash of child node
 		currNode.Idxs[keyHex[0]] = childHash
 		// recompute hash for the current node after child hash update
@@ -251,10 +264,47 @@ func (t *MptWorldState) Rebase(hash core.Byte64) error {
 		t.logger.Error("Failed to rebase world state to hash %x", hash)
 		return core.NewCoreError(ERR_NOT_FOUND, "hash does not exists")
 	} else {
+		t.logger.Debug("Found node to rebase %x", *rootNode)
 		// node exists, so we can rebase
 		t.rootHash = &hash
 		t.rootNode = rootNode
-		t.logger.Error("Rebased world state to hash %x", hash)
+		t.logger.Info("Rebased world state to hash %x", hash)
 	}
 	return nil
+}
+
+func (t *MptWorldState) Cleanup(hash core.Byte64) error {
+	// lookup node for the provided hash
+	if staleNode, ok := t.get(&hash); !ok {
+		t.logger.Error("Failed to find stale node for hash %x", hash)
+		return core.NewCoreError(ERR_NOT_FOUND, "hash does not exists")
+	} else {
+		// node exists, perform a depth first cleanup
+		t.cleanupDepthFirst(staleNode)
+	}
+	return nil
+}
+
+func (t *MptWorldState) cleanupDepthFirst(currNode *node) {
+	// check if we have reached the end of stale trie
+	if currNode == nil || currNode.Tombstone == unmarked {
+		return
+	}
+	// else continue to cleanup depth first
+	for _, childHash := range currNode.Idxs {
+		if childHash == null {
+			continue
+		}
+        if childNode, found := t.get(&childHash); found {
+		    t.cleanupDepthFirst(childNode)
+        } else {
+	        	t.logger.Error("Node not found for hash %x", childHash)
+        }
+	}
+	// remove the current node from DB
+	if err := t.db.Delete(tableKey(tableMptWorldStateNode, currNode.hash())); err != nil {
+		t.logger.Error("%x: %s", *currNode.hash(), err)
+	} else {
+		t.logger.Debug("Deleted stale nodes for hash %x", *currNode.hash())
+	}
 }
