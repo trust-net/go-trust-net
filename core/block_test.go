@@ -22,8 +22,8 @@ func TestNewSimpleBlock(t *testing.T) {
 	if block.Nonce().Uint64() != uint64(0x0) {
 		t.Errorf("Block nonce not initialized: Found '%s'", block.Nonce())
 	}
-	if block.OpCode().Uint64() != 0 {
-		t.Errorf("Block's op code not empty: Found '%d'", block.OpCode())
+	if len(block.Transactions()) != 0 {
+		t.Errorf("Block's transactions not empty: Found '%x'", block.Transactions())
 	}
 	if block.Weight().Uint64() != weight {
 		t.Errorf("Block's weight does not match: Expected '%d', Found '%d'", weight, block.Weight().Uint64())
@@ -46,13 +46,13 @@ func TestSimpleBlockAddTransaction(t *testing.T) {
 	block := NewSimpleBlock(previous, weight, depth, now, myNode)
 	// add first transaction
 	block.AddTransaction(Uint64ToByte8(0x123))
-	if block.OpCode().Uint64() != 0x123 {
-		t.Errorf("Block's op code not set: Expected '%d', Found '%d'", 0x123, block.OpCode())
+	if block.Transactions()[0].Uint64() != 0x123 {
+		t.Errorf("Block's op code not set: Expected '%d', Found '%d'", 0x123, block.Transactions()[0])
 	}
 	// add second transaction
 	block.AddTransaction(Uint64ToByte8(0x456))
-	if block.OpCode().Uint64() != 0x456 {
-		t.Errorf("Block's op code not updated: Expected '%d', Found '%d'", 0x456, block.OpCode())
+	if block.Transactions()[1].Uint64() != 0x456 {
+		t.Errorf("Block's op code not updated: Expected '%d', Found '%d'", 0x456, block.Transactions()[1])
 	}	
 }
 
@@ -73,10 +73,6 @@ func TestSimpleBlockAddUncle(t *testing.T) {
 	if len(uncles) != 1 || *uncles[0] != *uncleHash {
 		t.Errorf("Block did not updated uncles: Expected '%d', Found '%d'", 1, len(uncles))
 	}
-	block.AddTransaction(Uint64ToByte8(0x456))
-	if block.OpCode().Uint64() != 0x456 {
-		t.Errorf("Block's op code not updated: Expected '%d', Found '%d'", 0x456, block.OpCode())
-	}	
 }
 
 func TestSimpleBlockHash(t *testing.T) {
@@ -87,6 +83,7 @@ func TestSimpleBlockHash(t *testing.T) {
 	uncle2hash, uncle2weight := BytesToByte64([]byte("uncle 2")), uint64(2)
 	block.AddUncle(uncle1hash, uncle1weight)
 	block.AddUncle(uncle2hash, uncle2weight)
+	block.AddTransaction(Uint64ToByte8(0x01))
 	block.ComputeHash()
 	if len(block.Hash()) != 64 {
 		t.Errorf("Block hash not 64 bytes: Found '%d'", block.Hash())
@@ -96,10 +93,11 @@ func TestSimpleBlockHash(t *testing.T) {
 	data = append(data, previous.Bytes()..., )
 	data = append(data, block.miner.Bytes()...)
 	data = append(data, block.timestamp.Bytes()...)
-	data = append(data, block.opCode.Bytes()...)
+	data = append(data, block.state.Bytes()...)
+	data = append(data, block.Transactions()[0].Bytes()...)
+	data = append(data, Uint64ToByte8(weight+uncle1weight+uncle2weight).Bytes()...)
 	data = append(data, uncle1hash.Bytes()...)
 	data = append(data, uncle2hash.Bytes()...)
-	data = append(data, Uint64ToByte8(weight+uncle1weight+uncle2weight).Bytes()...)
 	data = append(data, block.Nonce().Bytes()...)
 	hash := sha512.Sum512(data)
 	if *block.Hash() != *BytesToByte64(hash[:]) {
@@ -119,7 +117,8 @@ func TestNewSimpleBlockFromSpec(t *testing.T) {
 		Weight: Uint64ToByte8(weight),
 		Depth: Uint64ToByte8(depth),
 		Uncles: []*Byte64{BytesToByte64([]byte("uncle1")), BytesToByte64([]byte("uncle2"))},
-		OpCode: Uint64ToByte8(0x08),
+		Transactions: []*Byte8{Uint64ToByte8(0x08)},
+		State: BytesToByte64(nil),
 	}
 	block := NewSimpleBlockFromSpec(&spec)
 	if *block.ParentHash() != *previous {
@@ -131,8 +130,8 @@ func TestNewSimpleBlockFromSpec(t *testing.T) {
 	if block.nonce != uint64(0x123456) {
 		t.Errorf("Block nonce not initialized: Expected '%d', Found '%d'", 0x123456, block.nonce)
 	}
-	if block.OpCode().Uint64() != uint64(0x08) {
-		t.Errorf("Block's op code not correct: Expected '%d', Found '%d'", 0x08, block.OpCode().Uint64())
+	if block.Transactions()[0].Uint64() != uint64(0x08) {
+		t.Errorf("Block's op code not correct: Expected '%d', Found '%d'", 0x08, block.Transactions()[0].Uint64())
 	}
 	if block.Weight().Uint64() != weight {
 		t.Errorf("Block's weight does not match: Expected '%d', Found '%d'", weight, block.Weight().Uint64())
@@ -164,7 +163,7 @@ func TestNewBlockSpecFromBlock(t *testing.T) {
 	block.AddUncle(BytesToByte64([]byte("uncle1")), 1)
 	block.AddUncle(BytesToByte64([]byte("uncle2")), 2)
 	block.nonce = 0x123456
-	block.opCode = Uint64ToByte8(0x08)
+	block.AddTransaction(Uint64ToByte8(0x08))
 	spec := NewBlockSpecFromBlock(block)
 	if *spec.Miner != *BytesToByte64([]byte(myNode.Id())) {
 		t.Errorf("Spec's miner does not match: Expected '%s', Found '%s'", BytesToByte64([]byte(myNode.Id())), spec.Miner)
@@ -172,8 +171,8 @@ func TestNewBlockSpecFromBlock(t *testing.T) {
 	if spec.Nonce.Uint64() != uint64(0x123456) {
 		t.Errorf("Spec's nonce not initialized: Expected '%d', Found '%d'", 0x123456, spec.Nonce.Uint64())
 	}
-	if spec.OpCode.Uint64() != uint64(0x08) {
-		t.Errorf("Spec's op code not correct: Expected '%d', Found '%d'", 0x08, spec.OpCode.Uint64())
+	if spec.Transactions[0].Uint64() != uint64(0x08) {
+		t.Errorf("Spec's op code not correct: Expected '%d', Found '%d'", 0x08, spec.Transactions[0].Uint64())
 	}
 	if spec.Timestamp.Uint64() != block.timestamp.Uint64() {
 		t.Errorf("Spec's time stamp incorrect: Expected '%d', Found '%d'", block.timestamp.Uint64(), spec.Timestamp.Uint64())

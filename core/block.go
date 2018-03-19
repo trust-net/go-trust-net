@@ -18,8 +18,9 @@ type Block interface {
 	Timestamp() *Byte8
 	Depth() *Byte8
 	Weight() *Byte8
+	State() *Byte64
 	Uncles() []*Byte64
-	OpCode() *Byte8
+	Transactions() []*Byte8
 	Hash() *Byte64
 }
 
@@ -27,10 +28,11 @@ type Block interface {
 type BlockSpec struct {
 	ParentHash *Byte64
 	Miner *Byte64
-	OpCode	*Byte8
+	Transactions []*Byte8
 	Timestamp *Byte8
 	Depth *Byte8
 	Weight *Byte8
+	State *Byte64
 	Uncles []*Byte64
 	Nonce *Byte8
 }
@@ -40,10 +42,11 @@ type SimpleBlock struct {
 	parentHash *Byte64
 	miner *Byte64
 	hash *Byte64
-	opCode	*Byte8
+	opCodes	[]*Byte8
 	timestamp *Byte8
 	depth *Byte8
 	weight *Byte8
+	state *Byte64
 	uncles []*Byte64
 	nonce uint64
 }
@@ -64,8 +67,8 @@ func (b *SimpleBlock) Timestamp() *Byte8 {
 	return b.timestamp
 }
 
-func (b *SimpleBlock) OpCode() *Byte8 {
-	return b.opCode
+func (b *SimpleBlock) Transactions() []*Byte8 {
+	return b.opCodes
 }
 
 func (b *SimpleBlock) Depth() *Byte8 {
@@ -81,8 +84,7 @@ func (b *SimpleBlock) Uncles() []*Byte64 {
 }
 
 func (b *SimpleBlock) AddTransaction(opCode *Byte8) {
-	// we are only doing 1 transaction in a block
-	b.opCode = opCode
+	b.opCodes = append(b.opCodes, opCode)
 }
 
 func (b *SimpleBlock) AddUncle(uncle *Byte64, weight uint64) {
@@ -90,6 +92,10 @@ func (b *SimpleBlock) AddUncle(uncle *Byte64, weight uint64) {
 	b.uncles = append(b.uncles, uncle)
 	// update weight from uncle's weight
 	b.weight = Uint64ToByte8(weight + b.weight.Uint64())
+}
+
+func (b *SimpleBlock) State() *Byte64 {
+	return b.state
 }
 
 func (b *SimpleBlock) Hash() *Byte64 {
@@ -100,18 +106,21 @@ type SimpleHeader struct {
 	header *Byte64
 }
 
-// block hash = SHA512(parent_hash + author_node + timestamp + opcode + nonce)
+// block hash = SHA512(parent_hash + author_node + timestamp + state + opcodes... + weight + uncles... + nonce)
 // we don't do any mining yet!!!
 func (b *SimpleBlock) ComputeHash() {
 	data := make([]byte,0)
 	data = append(data, b.parentHash.Bytes()...)
 	data = append(data, b.miner.Bytes()...)
 	data = append(data, b.timestamp.Bytes()...)
-	data = append(data, b.opCode.Bytes()...)
+	data = append(data, b.state.Bytes()...)
+	for _, opCode := range b.opCodes {
+		data = append(data, opCode.Bytes()...)
+	}
+	data = append(data, b.weight.Bytes()...)
 	for _, uncle := range b.uncles {
 		data = append(data, uncle.Bytes()...)
 	}
-	data = append(data, b.weight.Bytes()...)
 	data = append(data, Uint64ToByte8(b.nonce).Bytes()...)
 	hash := sha512.Sum512(data)
 	b.hash = BytesToByte64(hash[:])
@@ -143,7 +152,8 @@ func NewSimpleBlock(previous *Byte64, weight uint64, depth uint64, ts uint64, mi
 		depth: Uint64ToByte8(depth),
 		weight: Uint64ToByte8(weight),
 		uncles: make([]*Byte64, 0, 2),
-		opCode: Uint64ToByte8(0),
+		opCodes: make([]*Byte8,0,1),
+		state: BytesToByte64(nil),
 		hash: nil,
 	}
 }
@@ -157,12 +167,16 @@ func NewSimpleBlockFromSpec(spec *BlockSpec) *SimpleBlock {
 		timestamp: BytesToByte8(spec.Timestamp.Bytes()),
 		depth: BytesToByte8(spec.Depth.Bytes()),
 		weight: BytesToByte8(spec.Weight.Bytes()),
+		state: BytesToByte64(spec.State.Bytes()),
 		uncles: make([]*Byte64, len(spec.Uncles)),
-		opCode: BytesToByte8(spec.OpCode.Bytes()),
+		opCodes: make([]*Byte8, len(spec.Transactions)),
 		hash: nil,
 	}
 	for i, uncle := range spec.Uncles {
 		block.uncles[i] = BytesToByte64(uncle.Bytes())
+	}
+	for i, opCode := range spec.Transactions {
+		block.opCodes[i] = BytesToByte8(opCode.Bytes())
 	}
 	block.ComputeHash()
 	return &block
@@ -179,10 +193,14 @@ func NewBlockSpecFromBlock(block Block) *BlockSpec {
 		Depth: BytesToByte8(block.Depth().Bytes()),
 		Weight: BytesToByte8(block.Weight().Bytes()),
 		Uncles: make([]*Byte64, len(block.Uncles())),
-		OpCode: BytesToByte8(block.OpCode().Bytes()),
+		Transactions: make([]*Byte8, len(block.Transactions())),
+		State: block.State(),
 	}
 	for i, uncle := range block.Uncles() {
 		spec.Uncles[i] = BytesToByte64(uncle.Bytes())
+	}	
+	for i, tx := range block.Transactions() {
+		spec.Transactions[i] = BytesToByte8(tx.Bytes())
 	}	
 	return &spec
 }

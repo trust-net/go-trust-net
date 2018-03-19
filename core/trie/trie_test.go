@@ -203,7 +203,7 @@ func testWorldStateRebaseNotExisting(t *testing.T, ws WorldState) {
 
 
 func TestMptWorldStateCleanup(t *testing.T) {
-	log.SetLogLevel(log.DEBUG)
+	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	testWorldStateCleanup(t, NewMptWorldState(db))
 }

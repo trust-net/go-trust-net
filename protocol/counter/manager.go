@@ -270,13 +270,13 @@ func (mgr *CountrProtocolManager) listen(peer *protocol.Node) error {
 func (mgr *CountrProtocolManager) processBlockSpec(spec *core.BlockSpec, from *protocol.Node) (int64, *core.Byte64, error) {
 		block := core.NewSimpleBlockFromSpec(spec)
 		var delta int64
-		switch block.OpCode().Uint64() {
+		switch block.Transactions()[0].Uint64() {
 			case opIncrement:
 				delta = 1
 			case opDecrement:
 				delta = -1
 			default:
-				mgr.logger.Error("Invalid opcode '%d' from '%s'", block.OpCode().Uint64(), from.ID())
+				mgr.logger.Error("Invalid opcode '%d' from '%s'", block.Transactions()[0].Uint64(), from.ID())
 				return 0, nil, protocol.NewProtocolError(protocol.ErrorInvalidResponse, "GetBlocksResponseMsg has invalid opcode")
 		}
 		// add network block to our blockchain
