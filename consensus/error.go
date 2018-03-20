@@ -1,0 +1,12 @@
+package consensus
+
+import (
+
+)
+
+const (
+	ERR_INVALID_ARG = 0x100
+	ERR_TYPE_INCORRECT = 0x400
+	ERR_STATE_INCORRECT = 0x404
+	ERR_BLOCK_UNHASHED = 0x500
+)
