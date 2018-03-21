@@ -16,10 +16,12 @@ type Block interface {
 	Timestamp() *core.Byte8
 	Depth() *core.Byte8
 	Weight() *core.Byte8
-	WorldState() trie.WorldState
+	Update(key, value []byte) bool
+	Delete(key []byte) bool
+	Lookup(key []byte) ([]byte, error)
 	Uncles() []core.Byte64
 	Transactions() []Transaction
-	AddTransaction(tx *Transaction)
+	AddTransaction(tx *Transaction) error
 	Hash() *core.Byte64
 }
 
@@ -70,8 +72,18 @@ func (b *block) Weight() *core.Byte8 {
 	return &b.WT
 }
 
-func (b *block) WorldState() trie.WorldState {
-	return b.worldState
+func (b *block) Update(key, value []byte) bool {
+	hash := b.worldState.Hash()
+	return b.worldState.Update(key, value) != hash
+}
+
+func (b *block) Delete(key []byte) bool {
+	hash := b.worldState.Hash()
+	return b.worldState.Delete(key) != hash
+}
+
+func (b *block) Lookup(key []byte) ([]byte, error) {
+	return b.worldState.Lookup(key)
 }
 
 func (b *block) Uncles() []core.Byte64 {
@@ -87,8 +99,16 @@ func (b *block) Transactions() []Transaction {
 	return b.TXs
 }
 
-func (b *block) AddTransaction(tx *Transaction) {
+func (b *block) AddTransaction(tx *Transaction) error {
+	// first check if transaction does not already exists
+	if _, err := b.worldState.HasTransaction(tx.Id()); err == nil {
+		return core.NewCoreError(ERR_DUPLICATE_TX, "duplicate transaction")
+	}
+	// accept transaction to the list 
 	b.TXs = append(b.TXs, *tx)
+	// not updating world state with transactions yet, block needs to be mined first
+	// before it can update the transaction
+	return nil
 }
 
 func (b *block) Hash() *core.Byte64 {
@@ -106,11 +126,13 @@ func (b *block) computeHash() *core.Byte64 {
 	// block's weight +
 	// block's uncle's hash +
 	// nonce
-	data := make([]byte,0, 64+64+8+64+8+len(b.TXs)*(8+64+1)+8+len(b.UNCLEs)*64+8)
+	data := make([]byte,0, 64+64+8+64+8+len(b.TXs)*(8+64+1)+8+len(b.UNCLEs)*64)
 	data = append(data, b.PHASH.Bytes()...)
 	data = append(data, b.MINER.Bytes()...)
 	data = append(data, b.TS.Bytes()...)
-	b.STATE = b.worldState.Hash()
+	if b.worldState != nil {
+		b.STATE = b.worldState.Hash()
+	}
 	data = append(data, b.STATE.Bytes()...)
 	for _, tx := range b.TXs {
 		data = append(data, tx.Bytes()...)
@@ -119,13 +141,31 @@ func (b *block) computeHash() *core.Byte64 {
 	for _, uncle := range b.UNCLEs {
 		data = append(data, uncle.Bytes()...)
 	}
-	data = append(data, b.NONCE.Bytes()...)
-	hash := sha512.Sum512(data)
+	dataWithNonce := make([]byte, 0, len(data)+8)
+	nonce := b.NONCE.Uint64()
+	var hash [sha512.Size]byte
+	for {
+		// TODO: run the PoW
+		b.NONCE = *core.Uint64ToByte8(nonce)
+		dataWithNonce = append(data, b.NONCE.Bytes()...)
+		hash = sha512.Sum512(dataWithNonce)
+		break
+	}
 	b.hash = core.BytesToByte64(hash[:])
+	// update the world state with this block's transactions
+	if b.worldState != nil {
+		for _, tx := range b.TXs {
+			if err := b.worldState.RegisterTransaction(tx.Id(), b.hash); err != nil {
+				b.hash = nil
+				break
+			}
+		}
+	}
 	return b.hash
 }
 
-func NewBlock(previous *core.Byte64, weight uint64, depth uint64, ts uint64, miner *core.Byte64, state trie.WorldState) *block {
+// private method, can only be invoked by DAG implementation, so can be initiaized correctly
+func newBlock(previous *core.Byte64, weight uint64, depth uint64, ts uint64, miner *core.Byte64, state trie.WorldState) *block {
 	if ts == 0 {
 		ts = uint64(time.Now().UnixNano())
 	}
@@ -147,7 +187,7 @@ func NewBlock(previous *core.Byte64, weight uint64, depth uint64, ts uint64, min
 	return b
 }
 
-func SerializeBlock(b Block) ([]byte, error) {
+func serializeBlock(b Block) ([]byte, error) {
 	if b == nil {
 		return nil, core.NewCoreError(ERR_INVALID_ARG, "nil block")
 	}
@@ -155,7 +195,7 @@ func SerializeBlock(b Block) ([]byte, error) {
 	if !ok {
 		return nil, core.NewCoreError(ERR_TYPE_INCORRECT, "incorrect type")
 	}
-	if block.STATE == *core.BytesToByte64(nil) || block.WorldState() == nil || block.WorldState().Hash() != block.STATE {
+	if block.STATE == *core.BytesToByte64(nil) || block.worldState == nil || block.worldState.Hash() != block.STATE {
 		return nil, core.NewCoreError(ERR_STATE_INCORRECT, "block state incorrect")
 	}
 	if block.hash == nil {
@@ -164,15 +204,21 @@ func SerializeBlock(b Block) ([]byte, error) {
 	return common.Serialize(b)
 }
 
-func DeSerializeBlock(data []byte, worldState trie.WorldState) (*block, error) {
+// private method, can only be invoked by DAG implementation, so that world state can be added after deserialization
+// here we only want to deserialize wire protocol data into block instance, then after this DAG implementation
+// will use a world state rebased to parent's state trie, and then pass it on to application to run
+// the transactions and value changes as appropriate
+func deSerializeBlock(data []byte) (*block, error) {
 	var b block
 	if err := common.Deserialize(data, &b); err != nil {
 		return nil, err
 	}
-	if err := worldState.Rebase(b.STATE); err != nil {
-		return nil, err
-	}
-	b.worldState = worldState
 	b.computeHash()
+	// TODO: check if block meets the PoW
+
+	// Q: when, where, who to update world state with this block's value changes?
+	// A: application will validate transactions, at which time world state will be updated with values
+	//    and then submit the network block for acceptance, at which time canonical chain will start pointing
+	//    to world state view of this block (if accepted)
 	return &b, nil
 }
