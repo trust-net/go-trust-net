@@ -242,7 +242,6 @@ func TestTransactionAdd(t *testing.T) {
 	}
 }
 
-
 func TestUncleAdd(t *testing.T) {
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)

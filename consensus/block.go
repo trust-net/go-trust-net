@@ -110,8 +110,8 @@ func (b *block) computeHash() *core.Byte64 {
 	data = append(data, b.PHASH.Bytes()...)
 	data = append(data, b.MINER.Bytes()...)
 	data = append(data, b.TS.Bytes()...)
-	state := b.worldState.Hash()
-	data = append(data, state.Bytes()...)
+	b.STATE = b.worldState.Hash()
+	data = append(data, b.STATE.Bytes()...)
 	for _, tx := range b.TXs {
 		data = append(data, tx.Bytes()...)
 	}

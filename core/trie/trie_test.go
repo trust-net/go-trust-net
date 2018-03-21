@@ -267,12 +267,12 @@ func TestMptWorldStateDb(t *testing.T) {
 	ws := NewMptWorldState(db)
 	node := node{}
 	node.Value = []byte("value")
-	ws.(*MptWorldState).put(node.hash(), &node)
+	ws.(*MptWorldState).putState(node.hash(), &node)
 	db.Delete(tableKey(tableMptWorldStateNode, node.hash()))
 	if _, err := db.Get(node.hash().Bytes()); err == nil {
 		t.Errorf("DB: Deleted key can be fetched!!!")
 	}
-	if _, ok := ws.(*MptWorldState).get(node.hash()); ok {
+	if _, ok := ws.(*MptWorldState).getState(node.hash()); ok {
 		t.Errorf("WS: Deleted key can be fetched!!!")
 	}
 }
