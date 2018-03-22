@@ -25,6 +25,7 @@ type Block interface {
 	Hash() *core.Byte64
 }
 
+// these are the fields that actually go over the wire
 type BlockSpec struct {
 	PHASH core.Byte64
 	MINER core.Byte64
