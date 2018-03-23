@@ -3,11 +3,11 @@ A public DLT based implementation for Bring Your Own Identity (BYOI) system.
 
 ## What is Trust Net?
 What are high level objectives of trust network?
-* Build your own Identity service
 * Privacy (You control who sees what about your Identity)
 * Security (No single point of mass vulnerability)
 * Availability (Resilient to high number of node failures)
 * Ownership (You decide where/how to host your identity)
+* Build your own Identity service (Any node on the network can be used as an Identity service!)
 
 ## Why Trust Net?
 Fundamental question:
