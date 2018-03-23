@@ -169,16 +169,88 @@ func (c *BlockChainConsensus) TransactionStatus(tx *Transaction) (Block, error) 
 	return nil, core.NewCoreError(ERR_NOT_IMPLEMENTED, "transaction status not yet implemented")
 }
 
-// deserialize data into network block, and will initialize the block with current canonical parent's
+// validate uncle relationship
+func (c *BlockChainConsensus) isUncleValid(child *block, uHash *core.Byte64) bool {
+	// check if uncle is known
+	if uncle, err := c.getChainNode(uHash); err != nil {
+		c.logger.Error("block with unknown uncle!!!")
+		return false
+	} else {
+		// find common ancestor
+		var parent *chainNode
+		for parent, _ = c.getChainNode(&child.PHASH); parent != nil && parent.Depth < uncle.Depth; {
+			parent, _ = c.getChainNode(parent.Parent)
+		}
+		for ; parent != nil && uncle != nil && uncle.Depth < parent.Depth; {
+			uncle, _ = c.getChainNode(uncle.Parent)
+		}
+		if parent == nil || uncle == nil {
+			// did not find common ancestor
+			return false
+		}
+		if *parent.Hash == *uncle.Hash {
+			// uncle cannot be direct ancestor
+			return false
+		}
+		for parent != nil && uncle != nil && *parent.Hash != *uncle.Hash {
+			parent, _ = c.getChainNode(parent.Parent)
+			uncle, _ = c.getChainNode(uncle.Parent)
+		}
+		return parent != nil && uncle != nil && (child.Depth().Uint64() - parent.Depth <  maxUncleDistance)
+	}
+}
+// deserialize data into network block, and will initialize the block with block's parent's
 // world state root (application is responsible to run the transactions from block, and update
 // world state appropriately)
 func (c *BlockChainConsensus) DeserializeNetworkBlock(data []byte) (Block, error) {
-	return nil, core.NewCoreError(ERR_NOT_IMPLEMENTED, "deserialize not yet implemented")
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	var block, parent *block
+	var err error
+	if block, err = deSerializeBlock(data); err != nil {
+		c.logger.Error("failed to deserialize network block's data: %s", err.Error())
+		return nil, err
+	}
+	// verify that block's parent exists
+	if parent, err = c.getBlock(block.ParentHash()); err != nil {
+		c.logger.Error("failed to find network block's parent: %s", err.Error())
+		return nil, core.NewCoreError(ERR_BLOCK_ORPHAN, "cannot find parent")
+	}
+	// validate that block's depth is correct
+	if block.Depth().Uint64() != parent.Depth().Uint64() + 1 {
+		c.logger.Error("incorrect depth on network block")
+		return nil, core.NewCoreError(ERR_BLOCK_VALIDATION, "incorrect depth")
+	}
+	// validate that block's weight is correct
+	weight := parent.Weight().Uint64() + 1
+	// validate uncles are known and within distance
+	for _, uncle := range block.Uncles() {
+		if !c.isUncleValid(block, &uncle) {
+			c.logger.Error("block with invalid uncle: %x", uncle)
+			return nil, core.NewCoreError(ERR_BLOCK_VALIDATION, "invalid uncle")
+		}
+		// increment weight for valid uncle
+		weight++
+		// TODO: process mining reward for uncle list
+	}
+
+	if block.Weight().Uint64() != weight {
+		c.logger.Error("incorrect weight on network block")
+		return nil, core.NewCoreError(ERR_BLOCK_VALIDATION, "incorrect weight")
+	}
+	// initialze block's world state to parent's world state
+	state := trie.NewMptWorldState(c.db)
+	if err = state.Rebase(parent.STATE); err != nil {
+		c.logger.Error("failed to initialize network block's world state: %s", err.Error())
+		return nil, core.NewCoreError(ERR_STATE_INCORRECT, "cannot initialize state")
+	}
+	block.worldState = state
+	return block, nil
 }
 
-// submit a "validated" network block, and it will add to block DAG appropriately
-// (i.e. either extend canonical chain, or add as an uncle block), will also update
-// the world state with block's transactions
+// submit a "processed" network block, will be added to DAG appropriately
+// (i.e. either extend canonical chain, or add as an uncle block)
+// block's computed world state should match STATE of the deSerialized block,
 func (c *BlockChainConsensus) AcceptNetworkBlock(b Block) error {
 	return core.NewCoreError(ERR_NOT_IMPLEMENTED, "accept network block not yet implemented")
 }

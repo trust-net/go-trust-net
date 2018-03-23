@@ -4,6 +4,8 @@ import (
 
 )
 
+// a callback provided by application to handle results of block mining request
+// serialized block is provided, if successful, or error is provided if failed/aborted
 type MiningResultHandler func(data []byte, err error)
 
 // a consensus platform interface
@@ -23,9 +25,9 @@ type Consensus interface {
 	// world state root (application is responsible to run the transactions from block, and update
 	// world state appropriately)
 	DeserializeNetworkBlock(data []byte) (Block, error)
-	// submit a "validated" network block, and it will add to block DAG appropriately
-	// (i.e. either extend canonical chain, or add as an uncle block), will also update
-	// the world state with block's transactions
+	// submit a "processed" network block, will be added to DAG appropriately
+	// (i.e. either extend canonical chain, or add as an uncle block)
+	// block's computed world state should match STATE of the deSerialized block,
 	AcceptNetworkBlock(b Block) error
 //	// serialize a block to send over wire
 //	Serialize(b Block) ([]byte, error)
