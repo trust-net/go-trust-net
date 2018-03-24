@@ -47,6 +47,7 @@ type block struct {
 	BlockSpec
 	worldState trie.WorldState
 	hash *core.Byte64
+	isNetworkBlock bool
 }
 
 func (b *block) ParentHash() *core.Byte64 {
@@ -107,8 +108,8 @@ func (b *block) AddTransaction(tx *Transaction) error {
 	}
 	// accept transaction to the list 
 	b.TXs = append(b.TXs, *tx)
-	// not updating world state with transactions yet, block needs to be mined first
-	// before it can update the transaction
+	// not updating world state with transactions yet because don't have hash computed yet,
+	// this will be done after hash computation, in the computeHash method
 	return nil
 }
 
@@ -145,12 +146,23 @@ func (b *block) computeHash() *core.Byte64 {
 	dataWithNonce := make([]byte, 0, len(data)+8)
 	nonce := b.NONCE.Uint64()
 	var hash [sha512.Size]byte
-	for {
+	isPoWDone := false
+
+	for !isPoWDone {
 		// TODO: run the PoW
 		b.NONCE = *core.Uint64ToByte8(nonce)
+		nonce++
 		dataWithNonce = append(data, b.NONCE.Bytes()...)
 		hash = sha512.Sum512(dataWithNonce)
-		break
+		// check PoW validation
+		// TODO
+		isPoWDone = true
+		
+		// if a network block, then 1st hash MUST be correct
+		if !isPoWDone && b.isNetworkBlock {
+			// return an error
+			return nil
+		}
 	}
 	b.hash = core.BytesToByte64(hash[:])
 	// update the world state with this block's transactions

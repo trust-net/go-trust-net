@@ -106,7 +106,7 @@ func (c *BlockChainConsensus) Tip() Block {
 
 func (chain *BlockChainConsensus) getChainNode(hash *core.Byte64) (*chainNode, error) {
 	if data, err := chain.db.Get(tableKey(tableChainNode, hash)); err != nil {
-		chain.logger.Error("Did not find chain node in DB: %x", *hash)
+//		chain.logger.Error("Did not find chain node in DB: %x", *hash)
 		return nil, err
 	} else {
 		var node chainNode
@@ -121,7 +121,7 @@ func (chain *BlockChainConsensus) getChainNode(hash *core.Byte64) (*chainNode, e
 
 func (chain *BlockChainConsensus) getBlock(hash *core.Byte64) (*block, error) {
 	if data, err := chain.db.Get(tableKey(tableBlock, hash)); err != nil {
-		chain.logger.Error("Did not find block in DB: %s", err.Error())
+//		chain.logger.Error("Did not find block in DB: %s", err.Error())
 		return nil, err
 	} else {
 		var block *block
@@ -283,7 +283,20 @@ func (c *BlockChainConsensus) mineCandidateBlock(child, parent *block, cb Mining
 
 // query status of a transaction (its block details) in the canonical chain
 func (c *BlockChainConsensus) TransactionStatus(tx *Transaction) (Block, error) {
-	return nil, core.NewCoreError(ERR_NOT_IMPLEMENTED, "transaction status not yet implemented")
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	// lookup transaction in the current canonical chain
+	if hash, err := c.state.HasTransaction(tx.Id()); err != nil {
+		c.logger.Debug("Transaction does not exists: %x", tx.Id())
+		return nil, core.NewCoreError(ERR_TX_NOT_FOUND, "transaction not found")
+	} else 
+	// find the block that finalized the transaction
+	if block, err := c.getBlock(hash); err != nil {
+		c.logger.Error("Failed to get block for transaction: %s", err)
+		return nil, core.NewCoreError(ERR_DB_CORRUPTED, "error reading transaction's block")
+	} else {
+		return block, nil
+	}
 }
 
 // validate uncle relationship
@@ -366,8 +379,8 @@ func (c *BlockChainConsensus) DeserializeNetworkBlock(data []byte) (Block, error
 		c.logger.Error("failed to deserialize network block's data: %s", err.Error())
 		return nil, err
 	}
-//	// hash the block from network
-//	block.computeHash()
+	// set the network flag on block
+	block.isNetworkBlock = true
 
 	// validate block
 	if parent, err = c.validateBlock(block); err != nil {
@@ -395,12 +408,7 @@ func (c *BlockChainConsensus) AcceptNetworkBlock(b Block) error {
 	if parent, err = c.validateBlock(b); err != nil {
 		return err
 	}
-//	// validate that computed state by application matches deserialized state of the block
-//	block, ok := b.(*block)
-//	if !ok {
-//		c.logger.Error("attempt to submit incorrect block type: %T", b)
-//		return core.NewCoreError(ERR_TYPE_INCORRECT, "block type incorrect")
-//	}
+	// validate that computed state by application matches deserialized state of the block
 	if b.(*block).worldState.Hash() != b.(*block).STATE {
 		c.logger.Error("computed world state of network block incorrect")
 		return core.NewCoreError(ERR_STATE_INCORRECT, "incorrect computed state")
@@ -410,6 +418,11 @@ func (c *BlockChainConsensus) AcceptNetworkBlock(b Block) error {
 
 // block has been validated (either mined local block, or processed network block) 
 func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
+	// verify that this is not a duplicate block
+	if _, err := c.getChainNode(child.Hash()); err == nil {
+		c.logger.Error("block already exists: %x", *child.Hash())
+		return core.NewCoreError(ERR_DUPLICATE_BLOCK, "duplicate block")
+	}
 	// add the new child node into our data store
 	childNode := newChainNode(child)
 	c.putBlock(child)
@@ -429,6 +442,10 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 		// update the tip in DB
 		if err := c.db.Put(dagTip, c.tip.Hash().Bytes()); err != nil {
 			return core.NewCoreError(ERR_DB_CORRUPTED, "failed to update tip in DB")
+		}
+		// change the world state
+		if err := c.state.Rebase(child.STATE); err != nil {
+			return core.NewCoreError(ERR_DB_CORRUPTED, "failed to update world state")
 		}
 		
 		// walk up the ancestor list setting them up as main list nodes
