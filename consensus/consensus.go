@@ -2,11 +2,14 @@ package consensus
 
 import (
 	"github.com/trust-net/go-trust-net/core"
+	"github.com/ethereum/go-ethereum/p2p"
 )
 
 // a callback provided by application to handle results of block mining request
-// serialized block is provided, if successful, or error is provided if failed/aborted
-type MiningResultHandler func(data []byte, err error)
+// block instance is provided (to update nodeset with hash), if successful, or error is provided if failed/aborted
+type MiningResultHandler func(block Block, err error)
+//// serialized block is provided, if successful, or error is provided if failed/aborted
+//type MiningResultHandler func(data []byte, err error)
 
 // a consensus platform interface
 type Consensus interface {
@@ -25,6 +28,8 @@ type Consensus interface {
 	// world state root (application is responsible to run the transactions from block, and update
 	// world state appropriately)
 	DeserializeNetworkBlock(data []byte) (Block, error)
+	// an equivalend implementation, to decode devP2P network block message
+	DecodeNetworkBlock(msg p2p.Msg) (Block, error)
 	// submit a "processed" network block, will be added to DAG appropriately
 	// (i.e. either extend canonical chain, or add as an uncle block)
 	// block's computed world state should match STATE of the deSerialized block,

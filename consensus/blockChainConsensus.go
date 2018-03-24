@@ -5,6 +5,7 @@ import (
     "time"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/core"
+	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/trust-net/go-trust-net/core/trie"
 	"github.com/trust-net/go-trust-net/db"
 	"github.com/trust-net/go-trust-net/common"
@@ -265,12 +266,12 @@ func (c *BlockChainConsensus) mineCandidateBlock(child, parent *block, cb Mining
 		return
 	}
 
-	// create serialized data of the block
-	data, err := serializeBlock(child)
-	if err != nil {
-		cb(nil, err)
-		return
-	}
+//	// create serialized data of the block
+//	data, err := serializeBlock(child)
+//	if err != nil {
+//		cb(nil, err)
+//		return
+//	}
 	// add the block
 	c.lock.Lock()
 	c.lock.Unlock()
@@ -281,8 +282,10 @@ func (c *BlockChainConsensus) mineCandidateBlock(child, parent *block, cb Mining
 	// since we added to self, we also want to announce to network, regardless of whether there was some other network block
 	// added while we were mining. Consenus algorithm will take care of keeping canonical chain tip poining to the right block
 	
-	// return serialized data for the block
-	cb(data, nil)
+//	// return serialized data for the block
+//	cb(data, nil)
+	// return raw block, so that protocol layer can update "seen" node set with hash of the block
+	cb(child, nil)
 }
 
 // query status of a transaction (its block details) in the canonical chain
@@ -377,17 +380,52 @@ func (c *BlockChainConsensus) validateBlock(b Block) (*block, error) {
 func (c *BlockChainConsensus) DeserializeNetworkBlock(data []byte) (Block, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
-	var block, parent *block
-	var err error
-	if block, err = deSerializeBlock(data); err != nil {
+//	var block, parent *block
+//	var err error
+	if block, err := deSerializeBlock(data); err != nil {
 		c.logger.Error("failed to deserialize network block's data: %s", err.Error())
 		return nil, err
+	} else {
+		// process the block
+		return c.processNetworkBlock(block)
 	}
+//	// set the network flag on block
+//	block.isNetworkBlock = true
+//
+//	// validate block
+//	if parent, err = c.validateBlock(block); err != nil {
+//		return nil, err
+//	}
+//	// initialze block's world state to parent's world state
+//	state := trie.NewMptWorldState(c.db)
+//	if err = state.Rebase(parent.STATE); err != nil {
+//		c.logger.Error("failed to initialize network block's world state: %s", err.Error())
+//		return nil, core.NewCoreError(ERR_STATE_INCORRECT, "cannot initialize state")
+//	}
+//	block.worldState = state
+//	return block, nil
+}
+
+func (c *BlockChainConsensus) DecodeNetworkBlock(msg p2p.Msg) (Block, error) {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	var newBlock block
+	if err := msg.Decode(&newBlock); err != nil {
+		c.logger.Error("failed to decode p2p network block: %s", err)
+		return nil, err
+	}
+	// process the block
+	return c.processNetworkBlock(&newBlock)
+}
+
+func (c *BlockChainConsensus) processNetworkBlock(b *block) (Block, error) {
 	// set the network flag on block
-	block.isNetworkBlock = true
+	b.isNetworkBlock = true
 
 	// validate block
-	if parent, err = c.validateBlock(block); err != nil {
+	var parent *block
+	var err error
+	if parent, err = c.validateBlock(b); err != nil {
 		return nil, err
 	}
 	// initialze block's world state to parent's world state
@@ -396,8 +434,8 @@ func (c *BlockChainConsensus) DeserializeNetworkBlock(data []byte) (Block, error
 		c.logger.Error("failed to initialize network block's world state: %s", err.Error())
 		return nil, core.NewCoreError(ERR_STATE_INCORRECT, "cannot initialize state")
 	}
-	block.worldState = state
-	return block, nil
+	b.worldState = state
+	return b, nil
 }
 
 // submit a "processed" network block, will be added to DAG appropriately

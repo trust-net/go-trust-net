@@ -28,7 +28,6 @@ func TestTransactionId(t *testing.T) {
 	}
 }
 
-
 func TestTransactionBytes(t *testing.T) {
 	payload := []byte("some data")
 	ts := core.Uint64ToByte8(0x12123434)
@@ -54,5 +53,18 @@ func TestTransactionBytes(t *testing.T) {
 			t.Errorf("Bytes incorrect:\nExpected: %x\nActual: %x", data, bytes)
 			break
 		}
+	}
+}
+
+
+func TestNewTransaction(t *testing.T) {
+	payload := []byte("some data")
+	submitter := core.BytesToByte64([]byte("some random submitter"))
+	tx := NewTransaction(payload, submitter)
+	if string(tx.Payload) != "some data" {
+		t.Errorf("incorrect payload: '%s'", tx.Payload)
+	}
+	if *tx.Submitter != *submitter {
+		t.Errorf("incorrect submitter: %s", *tx.Submitter)
 	}
 }

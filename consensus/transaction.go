@@ -1,6 +1,7 @@
 package consensus
 
 import (
+	"time"
 	"crypto/sha512"
 	"github.com/trust-net/go-trust-net/core"
 )
@@ -23,4 +24,14 @@ func (tx *Transaction) Bytes() []byte {
 	data = append(data, tx.Timestamp.Bytes()...)
 	data = append(data, tx.Submitter.Bytes()...)
 	return data
+}
+
+func NewTransaction(payload []byte, submitter *core.Byte64) *Transaction {
+	tx := Transaction {
+		Payload: make([]byte, 0, len(payload)),
+		Timestamp: core.Uint64ToByte8(uint64(time.Now().UnixNano())),
+		Submitter: core.BytesToByte64(submitter.Bytes()),
+	}
+	tx.Payload = append(tx.Payload, payload...)
+	return &tx
 }

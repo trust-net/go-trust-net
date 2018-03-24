@@ -134,7 +134,8 @@ func TestMineCandidateBlock(t *testing.T) {
 	// mining will be executed in a background goroutine
 	log.SetLogLevel(log.NONE)
 	done := make(chan struct{})
-	c.MineCandidateBlock(child, func(data []byte, err error) {
+//	c.MineCandidateBlock(child, func(data []byte, err error) {
+	c.MineCandidateBlock(child, func(b Block, err error) {
 			defer func() {done <- struct{}{}}()
 			if err != nil {
 				t.Errorf("failed to mine candidate block: %s", err)
@@ -166,7 +167,8 @@ func TestMineCandidateBlockDuplicate(t *testing.T) {
 	// mining will be executed in a background goroutine
 	log.SetLogLevel(log.NONE)
 	done := make(chan struct{})
-	c.MineCandidateBlock(child, func(data []byte, err error) {
+//	c.MineCandidateBlock(child, func(data []byte, err error) {
+	c.MineCandidateBlock(child, func(block Block, err error) {
 			defer func() {done <- struct{}{}}()
 			if err != nil {
 				t.Errorf("failed to mine candidate block: %s", err)
@@ -176,7 +178,8 @@ func TestMineCandidateBlockDuplicate(t *testing.T) {
 	// wait for our callback to finish
 	<-done
 	// now re-submit the same block for mining
-	c.MineCandidateBlock(child, func(data []byte, err error) {
+//	c.MineCandidateBlock(child, func(data []byte, err error) {
+	c.MineCandidateBlock(child, func(block Block, err error) {
 			defer func() {done <- struct{}{}}()
 			if err == nil {
 				t.Errorf("failed to detect duplicate candidate block")
@@ -204,7 +207,8 @@ func TestTransactionStatus(t *testing.T) {
 	}
 	// mine the child block
 	done := make(chan struct{})
-	c.MineCandidateBlock(child, func(data []byte, err error) {
+//	c.MineCandidateBlock(child, func(data []byte, err error) {
+	c.MineCandidateBlock(child, func(block Block, err error) {
 			defer func() {done <- struct{}{}}()
 			if err != nil {
 				t.Errorf("failed to mine candidate block: %s", err)
@@ -361,7 +365,8 @@ func addBlock(b Block, c Consensus) error {
 	// mining will be executed in a background goroutine
 	done := make(chan struct{})
 	var result error
-	c.MineCandidateBlock(b, func(data []byte, err error) {
+//	c.MineCandidateBlock(b, func(data []byte, err error) {
+	c.MineCandidateBlock(b, func(block Block, err error) {
 			result = err
 			defer func() {done <- struct{}{}}()
 	});
@@ -513,7 +518,8 @@ func TestBlockChainConsensus(t *testing.T) {
 		// create a mining callback handler for this candidate block
 		done := make(chan struct{})
 		var minedBlock []byte
-		miningCallback := func(data []byte, err error) {
+//		miningCallback := func(data []byte, err error) {
+		miningCallback := func(block Block, err error) {
 				defer func() {
 					done <- struct{}{}
 				}()
@@ -524,7 +530,7 @@ func TestBlockChainConsensus(t *testing.T) {
 				}
 				// simulate mining delay
 				time.Sleep(time.Millisecond * time.Duration(rand.Intn(200)))
-				minedBlock = data
+				minedBlock, err = serializeBlock(block)
 		}
 		// process mining block for application instance, and then broadcast to network
 		switch myChain {
