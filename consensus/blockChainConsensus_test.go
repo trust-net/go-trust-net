@@ -442,6 +442,38 @@ func TestBlockChainConsensusHeaviestChain(t *testing.T) {
 	}
 }
 
+func TestBlockChainConsensusBestBlock(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(3, c.tip, c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+	
+	// get the best block
+	bb := c.BestBlock()
+	if bb == nil {
+		t.Errorf("failed to get best block")
+		return
+	}
+	// validate the best block
+	if *bb.Hash() != *c.tip.Hash() {
+		t.Errorf("best block hash incorrect: %x", *bb.Hash())
+	}
+	if *bb.Depth() != *c.tip.Depth() {
+		t.Errorf("best block Depth incorrect: %d", bb.Depth().Uint64())
+	}
+	if *bb.Weight() != *c.tip.Weight() {
+		t.Errorf("best block Weight incorrect: %d", bb.Weight().Uint64())
+	}
+}
+
 func TestBlockChainConsensus(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	// simulate 3 different concurrent nodes updating their individual blockchain instances

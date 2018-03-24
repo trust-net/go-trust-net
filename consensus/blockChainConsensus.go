@@ -486,8 +486,21 @@ func (c *BlockChainConsensus) findMainListChild(parent, skipChild *chainNode) *c
 	return nil
 }
 
+// a copy of best block in current cannonical chain, used by protocol manager for handshake
+func (c *BlockChainConsensus) BestBlock() Block {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
 
-//// serialize a block to send over wire
-//func (c *BlockChainConsensus) Serialize(b Block) ([]byte, error) {
-//	return nil, core.NewCoreError(ERR_NOT_IMPLEMENTED, "serialize not yet implemented")
-//}
+	// create a copy of world state from current canonical tip's world view
+	state := trie.NewMptWorldState(c.db)
+	if err := state.Rebase(c.state.Hash()); err != nil {
+		c.logger.Error("failed to initialize best block's world state: %s", err.Error())
+		return nil
+	}
+	return c.tip.clone(state)
+}
+
+// ordered list of serialized descendents from specific parent, on the current canonical chain
+func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([][]byte, error) {
+	return nil, core.NewCoreError(ERR_NOT_IMPLEMENTED, "method not implemented")
+}

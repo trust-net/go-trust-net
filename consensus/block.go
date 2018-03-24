@@ -177,6 +177,25 @@ func (b *block) computeHash() *core.Byte64 {
 	return b.hash
 }
 
+// create a copy of block
+func (b *block) clone(state trie.WorldState) *block {
+	return &block{
+		BlockSpec: BlockSpec {
+			PHASH: b.PHASH,
+			MINER: b.MINER,
+			TXs: nil,
+			TS: b.TS,
+			DEPTH: b.DEPTH,
+			WT: b.WT,
+			UNCLEs: nil,
+			NONCE: b.NONCE,
+		},
+		hash: b.hash,
+		worldState: state,
+		isNetworkBlock: false,
+	}
+}
+
 // private method, can only be invoked by DAG implementation, so can be initiaized correctly
 func newBlock(previous *core.Byte64, weight uint64, depth uint64, ts uint64, miner *core.Byte64, state trie.WorldState) *block {
 	if ts == 0 {

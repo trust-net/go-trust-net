@@ -1,7 +1,7 @@
 package consensus
 
 import (
-
+	"github.com/trust-net/go-trust-net/core"
 )
 
 // a callback provided by application to handle results of block mining request
@@ -29,6 +29,8 @@ type Consensus interface {
 	// (i.e. either extend canonical chain, or add as an uncle block)
 	// block's computed world state should match STATE of the deSerialized block,
 	AcceptNetworkBlock(b Block) error
-//	// serialize a block to send over wire
-//	Serialize(b Block) ([]byte, error)
+    // a copy of best block in current cannonical chain, used by protocol manager for handshake
+    BestBlock() Block
+    // ordered list of serialized descendents from specific parent, on the current canonical chain
+    Descendents(parent *core.Byte64, max int) ([][]byte, error)
 }

@@ -389,3 +389,43 @@ func TestUncleAdd(t *testing.T) {
 		t.Errorf("Block weight after uncle add incorrect: Expecting '%d', Found '%d'", weight+1, b.Weight().Uint64())
 	}
 }
+
+
+func TestClone(t *testing.T) {
+	db, _ := db.NewDatabaseInMem()
+	ws := trie.NewMptWorldState(db)
+	now := uint64(time.Now().UnixNano())
+	weight, depth := uint64(23), uint64(20)
+	// prepare a block with state updates, transactions and uncles
+	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	b.hash = core.BytesToByte64([]byte("some random hash"))
+	b.addUncle(testUncle)
+	b.Update([]byte("key"), []byte("value"))
+	b.AddTransaction(testTransaction("transaction 1"))
+	state := trie.NewMptWorldState(db)
+	state.Rebase(b.worldState.Hash())
+	
+	// clone the block
+	copy := b.clone(state)
+	
+	// validate the clone
+	if copy.Hash() == nil || *copy.Hash() != *b.Hash() {
+		t.Errorf("clone hash incorrect: %x", copy.Hash())
+	}
+	if copy.Depth() == nil || *copy.Depth() != *b.Depth() {
+		t.Errorf("clone Depth incorrect: %d", copy.Depth().Uint64())
+	}
+	if copy.Weight() == nil || *copy.Weight() != *b.Weight() {
+		t.Errorf("clone Weight incorrect: %d", copy.Weight().Uint64())
+	}
+	if len(copy.Uncles()) != 0 {
+		t.Errorf("clone uncles list incorrect: %d", copy.Uncles())
+	}
+	if len(copy.Transactions()) != 0 {
+		t.Errorf("clone trasnactions list incorrect: %d", copy.Transactions())
+	}
+	value, _ := copy.Lookup([]byte("key"))
+	if string(value) != "value" {
+		t.Errorf("clone state lookup incorrect: %s", value)
+	}
+}
