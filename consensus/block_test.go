@@ -6,6 +6,7 @@ import (
 	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/common"
 	"github.com/trust-net/go-trust-net/db"
+	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/core/trie"
 )
 
@@ -344,6 +345,7 @@ func TestDeSerializeDecodeError(t *testing.T) {
 }
 
 func TestTransactionAdd(t *testing.T) {
+	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
 	now := uint64(time.Now().UnixNano())
@@ -361,6 +363,7 @@ func TestTransactionAdd(t *testing.T) {
 }
 
 func TestTransactionAddDuplicateTransaction(t *testing.T) {
+	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
 	now := uint64(time.Now().UnixNano())
@@ -376,6 +379,7 @@ func TestTransactionAddDuplicateTransaction(t *testing.T) {
 }
 
 func TestUncleAdd(t *testing.T) {
+	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
 	now := uint64(time.Now().UnixNano())
@@ -392,6 +396,7 @@ func TestUncleAdd(t *testing.T) {
 
 
 func TestClone(t *testing.T) {
+	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
 	now := uint64(time.Now().UnixNano())

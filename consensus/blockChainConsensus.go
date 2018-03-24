@@ -259,7 +259,11 @@ func (c *BlockChainConsensus) MineCandidateBlock(b Block, cb MiningResultHandler
 }
 func (c *BlockChainConsensus) mineCandidateBlock(child, parent *block, cb MiningResultHandler) {
 	// mine the block
-	child.computeHash()
+	if child.computeHash() == nil {
+		c.logger.Error("Failed to compute hash for block")
+		cb(nil, core.NewCoreError(ERR_BLOCK_UNHASHED, "hash computation failed"))
+		return
+	}
 
 	// create serialized data of the block
 	data, err := serializeBlock(child)
@@ -502,5 +506,49 @@ func (c *BlockChainConsensus) BestBlock() Block {
 
 // ordered list of serialized descendents from specific parent, on the current canonical chain
 func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([][]byte, error) {
-	return nil, core.NewCoreError(ERR_NOT_IMPLEMENTED, "method not implemented")
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	// limit number of blocks to maxBlocks
+	if max > maxBlocks {
+		max = maxBlocks
+	}
+	// create placeholder for deserialized descendents
+	descendents := make([][]byte, 0, max)
+	// loop over fetching chainNode and its mainlist descendents
+	count := 0
+	for parentNode, err := c.getChainNode(parent); count < max; count++{
+		if err != nil {
+			c.logger.Error("failed to fetch parent of descendents: %s", err.Error())
+			return descendents, err
+		}
+		// validate that its on canonical chain
+		if !parentNode.isMainList() {
+			c.logger.Error("fetched parent of descendent not on mainlist")
+			return descendents, core.NewCoreError(ERR_NOT_MAINLIST, "parent not on mainlist")
+		}
+		// fetch parent's descendent on main list
+		childNode := c.findMainListChild(parentNode, nil)
+		if childNode == nil {
+			c.logger.Error("no more descendents on mainlist")
+			return descendents, nil
+		}
+		// fetch actual block for this child node
+		if child, err := c.getBlock(childNode.hash()); err != nil {
+			c.logger.Error("failed to fetch descendent block: %s", err.Error())
+			return descendents, err
+		} else {
+			// add serialized block to descendents list
+			if data, err := serializeBlock(child); err == nil {
+				descendents = append(descendents, data)
+			} else {
+				c.logger.Error("failed to serialize descendent block: %s", err.Error())
+				return descendents, err
+			}
+		}
+		// move down descendent list
+		parentNode = childNode
+	}
+	
+	return descendents, nil
 }

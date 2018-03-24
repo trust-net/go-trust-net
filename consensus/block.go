@@ -183,6 +183,7 @@ func (b *block) clone(state trie.WorldState) *block {
 		BlockSpec: BlockSpec {
 			PHASH: b.PHASH,
 			MINER: b.MINER,
+			STATE: state.Hash(),
 			TXs: nil,
 			TS: b.TS,
 			DEPTH: b.DEPTH,
@@ -209,7 +210,6 @@ func newBlock(previous *core.Byte64, weight uint64, depth uint64, ts uint64, min
 			TS: *core.Uint64ToByte8(ts),
 			DEPTH: *core.Uint64ToByte8(depth),
 			WT: *core.Uint64ToByte8(weight),
-//			STATE: state.Hash(),
 			UNCLEs: make([]core.Byte64, 0),
 			NONCE: *core.BytesToByte8(nil),
 		},
@@ -230,7 +230,7 @@ func serializeBlock(b Block) ([]byte, error) {
 	if !ok {
 		return nil, core.NewCoreError(ERR_TYPE_INCORRECT, "incorrect type")
 	}
-	if block.STATE == *core.BytesToByte64(nil) || block.worldState == nil || block.worldState.Hash() != block.STATE {
+	if block.STATE == *core.BytesToByte64(nil) || (block.worldState != nil && block.worldState.Hash() != block.STATE) {
 		return nil, core.NewCoreError(ERR_STATE_INCORRECT, "block state incorrect")
 	}
 	if block.hash == nil {

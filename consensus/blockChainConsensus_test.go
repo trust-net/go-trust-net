@@ -359,16 +359,11 @@ func TestAcceptNetworkBlockDuplicate(t *testing.T) {
 
 func addBlock(b Block, c Consensus) error {
 	// mining will be executed in a background goroutine
-	log.SetLogLevel(log.NONE)
 	done := make(chan struct{})
 	var result error
 	c.MineCandidateBlock(b, func(data []byte, err error) {
 			result = err
 			defer func() {done <- struct{}{}}()
-//			if err != nil {
-//				t.Errorf("failed to mine candidate block: %s", err)
-//				return
-//			}
 	});
 	// wait for our callback to finish
 	<-done
@@ -380,7 +375,7 @@ func makeBlocks(len int, parent *block, c *BlockChainConsensus) []Block {
 	nodes := make([]Block, len)
 	for i := uint64(0); i < uint64(len); i++ {
 		state := trie.NewMptWorldState(c.db)
-		state.Rebase(c.state.Hash())
+		state.Rebase(parent.worldState.Hash())
 		child := newBlock(parent.Hash(), parent.Weight().Uint64()+1, parent.Depth().Uint64()+1, 0, testMiner, state)
 		child.computeHash()
 		nodes[i] = child
@@ -390,17 +385,10 @@ func makeBlocks(len int, parent *block, c *BlockChainConsensus) []Block {
 }
 
 func addChain(chain *BlockChainConsensus, blocks []Block) error{
-//	var parent *block
-//	parent = nil  
 	for _, block := range(blocks) {
-//		if parent != nil {
-//			block = core.NewSimpleBlock(parent.Hash(), parent.Weight().Uint64()+1, parent.Depth().Uint64()+1, 0, miner)
-//		}
 		if err := chain.AcceptNetworkBlock(block); err != nil {
 			return err
 		}
-//		parent = block
-//		blocks[i] = block
 	}
 	return nil
 }
@@ -428,7 +416,7 @@ func TestBlockChainConsensusHeaviestChain(t *testing.T) {
 	}
 	// now add 2nd chain with 4 blocks after the ancestor	
 	chain2 := makeBlocks(4, ancestor.(*block), c)
-	log.SetLogLevel(log.DEBUG)
+	log.SetLogLevel(log.NONE)
 	if err := addChain(c, chain2); err != nil {
 		t.Errorf("2nd chain failed to add block: %s", err)
 	}
@@ -442,36 +430,61 @@ func TestBlockChainConsensusHeaviestChain(t *testing.T) {
 	}
 }
 
-func TestBlockChainConsensusBestBlock(t *testing.T) {
+func TestBlockChainConsensusUncleWeight(t *testing.T) {
 	log.SetLogLevel(log.NONE)
-	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
-	if err != nil || c == nil {
-		t.Errorf("failed to get blockchain consensus instance: %s", err)
-		return
+	defer log.SetLogLevel(log.NONE)
+	// simulate 3 different concurrent nodes updating their individual blockchain instances
+	node1, node2, node3 := core.BytesToByte64([]byte("test node #1")), core.BytesToByte64([]byte("test node #2")), core.BytesToByte64([]byte("test node #3"))
+	db1, _ := db.NewDatabaseInMem()
+	chain1, _ := NewBlockChainConsensus(genesisHash, genesisTime, node1, db1)
+	db2, _ := db.NewDatabaseInMem()
+	chain2, _ := NewBlockChainConsensus(genesisHash, genesisTime, node2, db2)
+	db3, _ := db.NewDatabaseInMem()
+	chain3, _ := NewBlockChainConsensus(genesisHash, genesisTime, node3, db3)
+	
+	// let first node mine a block and broadcast to others
+	candidate1 := chain1.NewCandidateBlock()
+	if err := addBlock(candidate1, chain1); err != nil {
+		t.Errorf("failed to mine block: %s", err)
+	}
+	if err := addChain(chain2, []Block{candidate1}); err != nil {
+		t.Errorf("failed to add network block: %s", err)
+	}
+	if err := addChain(chain3, []Block{candidate1}); err != nil {
+		t.Errorf("failed to add network block: %s", err)
 	}
 
-	// add few blocks to chain
-	if err := addChain(c, makeBlocks(3, c.tip, c)); err != nil {
-		t.Errorf("failed to add block: %s", err)
+	// now let chain2 and chain3 mine blocks in parallel and announce simultaneously
+	candidate2 := chain2.NewCandidateBlock()
+	if err := addBlock(candidate2, chain2); err != nil {
+		t.Errorf("failed to mine block: %s", err)
 	}
-	
-	// get the best block
-	bb := c.BestBlock()
-	if bb == nil {
-		t.Errorf("failed to get best block")
-		return
+	candidate3 := chain3.NewCandidateBlock()
+	if err := addBlock(candidate3, chain3); err != nil {
+		t.Errorf("failed to mine block: %s", err)
 	}
-	// validate the best block
-	if *bb.Hash() != *c.tip.Hash() {
-		t.Errorf("best block hash incorrect: %x", *bb.Hash())
+	if err := addChain(chain1, []Block{candidate2}); err != nil {
+		t.Errorf("failed to add network block: %s", err)
 	}
-	if *bb.Depth() != *c.tip.Depth() {
-		t.Errorf("best block Depth incorrect: %d", bb.Depth().Uint64())
+	if err := addChain(chain3, []Block{candidate2}); err != nil {
+		t.Errorf("failed to add network block: %s", err)
 	}
-	if *bb.Weight() != *c.tip.Weight() {
-		t.Errorf("best block Weight incorrect: %d", bb.Weight().Uint64())
+	if err := addChain(chain1, []Block{candidate3}); err != nil {
+		t.Errorf("failed to add network block: %s", err)
 	}
+	if err := addChain(chain2, []Block{candidate3}); err != nil {
+		t.Errorf("failed to add network block: %s", err)
+	}
+	// now, next candidate block on chain1 should have candidate2 (first recieved) as parent,
+	// and candidate3 (next recieved) as uncle
+	log.SetLogLevel(log.DEBUG)
+	candidate1 = chain1.NewCandidateBlock()
+	if *candidate1.ParentHash() != *candidate2.Hash() {
+		t.Errorf("incorrect parent hash")
+	}
+	if len(candidate1.Uncles()) != 1 || candidate1.Uncles()[0] != *candidate3.Hash() {
+		t.Errorf("incorrect uncles: %d, %x", len(candidate1.Uncles()),  candidate1.Uncles()[0])
+	}	
 }
 
 func TestBlockChainConsensus(t *testing.T) {
@@ -608,5 +621,145 @@ func TestBlockChainConsensus(t *testing.T) {
 	}
 	if chain2.Tip().Weight().Uint64() != chain3.Tip().Weight().Uint64() {
 		t.Errorf("TD of chain2 '%d' not same as chain3 '%d'", chain2.Tip().Weight().Uint64(), chain3.Tip().Weight().Uint64())
+	}
+}
+
+func TestBlockChainConsensusBestBlock(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(3, c.tip, c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+	
+	// get the best block
+	bb := c.BestBlock()
+	if bb == nil {
+		t.Errorf("failed to get best block")
+		return
+	}
+	// validate the best block
+	if *bb.Hash() != *c.tip.Hash() {
+		t.Errorf("best block hash incorrect: %x", *bb.Hash())
+	}
+	if *bb.Depth() != *c.tip.Depth() {
+		t.Errorf("best block Depth incorrect: %d", bb.Depth().Uint64())
+	}
+	if *bb.Weight() != *c.tip.Weight() {
+		t.Errorf("best block Weight incorrect: %d", bb.Weight().Uint64())
+	}
+}
+
+func TestBlockChainConsensusDescendents(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+	
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+	// re assigned mined block to ancestor
+	ancestor = c.BestBlock()
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(3, ancestor.(*block), c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+	
+	// fetch descendents from ancestor
+	if descendents, err := c.Descendents(ancestor.Hash(), 100); err != nil {
+		t.Errorf("failed to get descendents: %s", err)
+	} else {
+		if len(descendents) != 3 {
+			t.Errorf("did not get all descendents: %d", len(descendents))
+		}
+		// validate each descendent
+		for _, descendent := range descendents {
+			if _, err := c.DeserializeNetworkBlock(descendent); err != nil {
+				t.Errorf("failed to de-serialize descendent: %s", err)
+			}
+		}
+	}
+}
+
+
+func TestBlockChainConsensusDescendentsMaxBlocks(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+	
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+	// re assigned mined block to ancestor
+	ancestor = c.BestBlock()
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(100, ancestor.(*block), c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+	
+	// fetch descendents from ancestor
+	if descendents, err := c.Descendents(ancestor.Hash(), 10); err != nil {
+		t.Errorf("failed to get descendents: %s", err)
+	} else {
+		if len(descendents) != 10 {
+			t.Errorf("did not limit descendents to max requested size: %d", len(descendents))
+		}
+	}
+}
+
+
+func TestBlockChainConsensusDescendentsMaxBlocksSystem(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+	
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+	// re assigned mined block to ancestor
+	ancestor = c.BestBlock()
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(150, ancestor.(*block), c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+	
+	// fetch descendents from ancestor
+	if descendents, err := c.Descendents(ancestor.Hash(), 150); err != nil {
+		t.Errorf("failed to get descendents: %s", err)
+	} else {
+		if len(descendents) != 100 {
+			t.Errorf("did not limit descendents to max system limit: %d", len(descendents))
+		}
 	}
 }
