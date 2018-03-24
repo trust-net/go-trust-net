@@ -6,11 +6,19 @@ import (
 	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/db"
 	"github.com/trust-net/go-trust-net/log"
+	"github.com/trust-net/go-trust-net/core/trie"
 )
 
-var genesisHash = core.BytesToByte64([]byte("a test genesis hash"))
+var genesisHash *core.Byte64
+var genesis *block
 var genesisTime = uint64(0x123456)
 var testNode = core.BytesToByte64([]byte("a test node"))
+
+func init() {
+	db, _ := db.NewDatabaseInMem()
+	genesis := newBlock(core.BytesToByte64(nil), 0, 0, genesisTime, core.BytesToByte64(nil), trie.NewMptWorldState(db))
+	genesisHash = genesis.computeHash()
+}
 
 func TestNewBlockChainConsensusGenesis(t *testing.T) {
 	log.SetLogLevel(log.NONE)
@@ -79,6 +87,9 @@ func TestNewBlockChainConsensusFromTip(t *testing.T) {
 	if *c.Tip().Hash() != *tip {
 		t.Errorf("tip is not correct:\nExpected %x\nFound %x", *tip, *c.Tip().Hash())
 	}
+	if c.weight != child.Weight().Uint64() {
+		t.Errorf("weight is not correct: Expected %d Found %d", child.Weight().Uint64(), c.weight)
+	}
 }
 
 func TestNewCandidateBlock(t *testing.T) {
@@ -101,45 +112,48 @@ func TestNewCandidateBlock(t *testing.T) {
 	}
 }
 
-//func TestMineCandidateBlock(t *testing.T) {
-//	log.SetLogLevel(log.NONE)
-//	db, _ := db.NewDatabaseInMem()
-//	consensus, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
-//	if err != nil || consensus == nil {
-//		t.Errorf("failed to get blockchain consensus instance: %s", err)
-//		return
-//	}
-//	// mining will be executed in a background goroutine
-//	done := make(chan struct{})
-//	consensus.MineCandidateBlock(nil, func(data []byte, err error) {
-//			defer func() {done <- struct{}{}}()
-//			if err != nil {
-//				t.Errorf("failed to mine candidate block: %s", err)
-//				return
-//			}
-//	});
-//	// wait for our callback to finish
-//	<-done
-//}
+func TestMineCandidateBlock(t *testing.T) {
+	log.SetLogLevel(log.DEBUG)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+	// get a new candidate block
+	child := c.NewCandidateBlock()
+	// mining will be executed in a background goroutine
+	log.SetLogLevel(log.DEBUG)
+	done := make(chan struct{})
+	c.MineCandidateBlock(child, func(data []byte, err error) {
+			defer func() {done <- struct{}{}}()
+			if err != nil {
+				t.Errorf("failed to mine candidate block: %s", err)
+				return
+			}
+	});
+	// wait for our callback to finish
+	<-done
+}
 
-//func TestTransactionStatus(t *testing.T) {
-//	log.SetLogLevel(log.NONE)
-//	db, _ := db.NewDatabaseInMem()
-//	consensus, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
-//	if err != nil || consensus == nil {
-//		t.Errorf("failed to get blockchain consensus instance: %s", err)
-//		return
-//	}
-//	var b Block
-//	if b,err = consensus.TransactionStatus(nil); err != nil {
-//		t.Errorf("failed to get transaction status: %s", err)
-//		return
-//	}
-//	if b == nil {
-//		t.Errorf("got nil instance")
-//		return
-//	}
-//}
+func TestTransactionStatus(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	consensus, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	if err != nil || consensus == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+	var b Block
+	if b,err = consensus.TransactionStatus(nil); err != nil {
+		t.Errorf("failed to get transaction status: %s", err)
+		return
+	}
+	if b == nil {
+		t.Errorf("got nil instance")
+		return
+	}
+}
 
 func TestDeserializeNetworkBlock(t *testing.T) {
 	log.SetLogLevel(log.NONE)
@@ -149,7 +163,7 @@ func TestDeserializeNetworkBlock(t *testing.T) {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
 	}
-	// build a new block simulates current tip's child
+	// build a new block to simulate current tip's child
 	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
 	child.computeHash()
 	data,_ := serializeBlock(child)
@@ -206,16 +220,34 @@ func TestDeserializeNetworkBlockWithUncle(t *testing.T) {
 	}
 }
 
-//func TestAcceptNetworkBlock(t *testing.T) {
-//	log.SetLogLevel(log.NONE)
-//	db, _ := db.NewDatabaseInMem()
-//	consensus, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
-//	if err != nil || consensus == nil {
-//		t.Errorf("failed to get blockchain consensus instance: %s", err)
-//		return
-//	}
-//	if err = consensus.AcceptNetworkBlock(nil); err != nil {
-//		t.Errorf("failed to get accept network block: %s", err)
-//		return
-//	}
-//}
+func TestAcceptNetworkBlock(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+	// build a new block to simulate current tip's child
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	child.computeHash()
+	data,_ := serializeBlock(child)
+	var b Block
+	if b, err = c.DeserializeNetworkBlock(data); err != nil {
+		t.Errorf("failed to deserialize block: %s", err)
+		return
+	}
+	if err = c.AcceptNetworkBlock(b); err != nil {
+		t.Errorf("failed to accept network block: %s", err)
+		return
+	}
+	// current tip should move to this new block
+	if *c.Tip().Hash() != *child.Hash() {
+		t.Errorf("DAG tip did not update!")
+		return
+	}
+	if c.state.Hash() != child.STATE {
+		t.Errorf("DAG world state did not update!")
+		return
+	}
+}

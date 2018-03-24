@@ -29,35 +29,35 @@ func newChainNode(block *block) *chainNode {
 	}
 }
 
-func (bn *chainNode) isMainList() bool{
-	return bn.IsMainList
+func (cn *chainNode) isMainList() bool{
+	return cn.IsMainList
 }
 
-func (bn *chainNode) setMainList(isMainList bool) {
-	bn.IsMainList = isMainList
+func (cn *chainNode) setMainList(isMainList bool) {
+	cn.IsMainList = isMainList
 }
 
-func (bn *chainNode) hash() *core.Byte64 {
-	return bn.Hash
+func (cn *chainNode) hash() *core.Byte64 {
+	return cn.Hash
 }
 
-func (bn *chainNode) parent() *core.Byte64 {
-	return bn.Parent
+func (cn *chainNode) parent() *core.Byte64 {
+	return cn.Parent
 }
 
-func (bn *chainNode) depth() uint64 {
-	return bn.Depth
+func (cn *chainNode) depth() uint64 {
+	return cn.Depth
 }
 
-func (bn *chainNode) weight() uint64 {
-	return bn.Weight
+func (cn *chainNode) weight() uint64 {
+	return cn.Weight
 }
 
-func (bn *chainNode) children() []*core.Byte64 {
-	return bn.Children
+func (cn *chainNode) children() []*core.Byte64 {
+	return cn.Children
 }
 
-func (bn *chainNode) addChild(childHash *core.Byte64) int {
-	bn.Children = append(bn.Children, childHash)
-	return len(bn.Children)
+func (cn *chainNode) addChild(childHash *core.Byte64) int {
+	cn.Children = append(cn.Children, childHash)
+	return len(cn.Children)
 }

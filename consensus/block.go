@@ -178,12 +178,15 @@ func newBlock(previous *core.Byte64, weight uint64, depth uint64, ts uint64, min
 			TS: *core.Uint64ToByte8(ts),
 			DEPTH: *core.Uint64ToByte8(depth),
 			WT: *core.Uint64ToByte8(weight),
-			STATE: state.Hash(),
+//			STATE: state.Hash(),
 			UNCLEs: make([]core.Byte64, 0),
 			NONCE: *core.BytesToByte8(nil),
 		},
 		worldState: state,
 		hash: nil,
+	}
+	if state != nil {
+		b.STATE = state.Hash()
 	}
 	return b
 }
@@ -215,7 +218,6 @@ func deSerializeBlock(data []byte) (*block, error) {
 		return nil, err
 	}
 	b.computeHash()
-	// TODO: check if block meets the PoW
 
 	// Q: when, where, who to update world state with this block's value changes?
 	// A: application will validate transactions, at which time world state will be updated with values
