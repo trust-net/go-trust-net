@@ -695,9 +695,12 @@ func TestBlockChainConsensusDescendents(t *testing.T) {
 		}
 		// validate each descendent
 		for _, descendent := range descendents {
-			if _, err := c.DeserializeNetworkBlock(descendent); err != nil {
-				t.Errorf("failed to de-serialize descendent: %s", err)
+			if descendent.(*block).STATE != ancestor.(*block).STATE {
+				t.Errorf("descendent state incorrect")
 			}
+//			if _, err := c.DeserializeNetworkBlock(descendent); err != nil {
+//				t.Errorf("failed to de-serialize descendent: %s", err)
+//			}
 		}
 	}
 }

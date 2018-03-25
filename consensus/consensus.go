@@ -36,6 +36,9 @@ type Consensus interface {
 	AcceptNetworkBlock(b Block) error
     // a copy of best block in current cannonical chain, used by protocol manager for handshake
     BestBlock() Block
+    // a copy of block with specified hash, or error if not found
+    Block(hash *core.Byte64) (Block, error)
     // ordered list of serialized descendents from specific parent, on the current canonical chain
-    Descendents(parent *core.Byte64, max int) ([][]byte, error)
+//    Descendents(parent *core.Byte64, max int) ([][]byte, error)
+    Descendents(parent *core.Byte64, max int) ([]Block, error)
 }

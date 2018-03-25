@@ -55,7 +55,8 @@ func NewBlockChainConsensus(genesisHash *core.Byte64, genesisTime uint64,
 
 	// genesis is statically defined using default values
 	genesisBlock := newBlock(genesisParent, 0, 0, genesisTime, core.BytesToByte64(nil), chain.state)
-	genesisBlock.hash = genesisHash
+	genesisBlock.computeHash()
+//	genesisBlock.hash = genesisHash
 	chain.genesisNode = newChainNode(genesisBlock)
 	chain.genesisNode.setMainList(true)
 
@@ -107,7 +108,7 @@ func (c *BlockChainConsensus) Tip() Block {
 
 func (chain *BlockChainConsensus) getChainNode(hash *core.Byte64) (*chainNode, error) {
 	if data, err := chain.db.Get(tableKey(tableChainNode, hash)); err != nil {
-//		chain.logger.Error("Did not find chain node in DB: %x", *hash)
+		chain.logger.Error("Did not find chain node in DB: %x", *hash)
 		return nil, err
 	} else {
 		var node chainNode
@@ -115,14 +116,14 @@ func (chain *BlockChainConsensus) getChainNode(hash *core.Byte64) (*chainNode, e
 			chain.logger.Error("failed to decode data from DB: %s", err.Error())
 			return nil, err
 		}
-//		chain.logger.Debug("Fetched chain node from DB: %x", *hash)
+		chain.logger.Debug("Fetched chain node from DB: %x", *hash)
 		return &node, nil
 	}
 }
 
 func (chain *BlockChainConsensus) getBlock(hash *core.Byte64) (*block, error) {
 	if data, err := chain.db.Get(tableKey(tableBlock, hash)); err != nil {
-//		chain.logger.Error("Did not find block in DB: %s", err.Error())
+		chain.logger.Error("Did not find block in DB: %s", err.Error())
 		return nil, err
 	} else {
 		var block *block
@@ -131,7 +132,7 @@ func (chain *BlockChainConsensus) getBlock(hash *core.Byte64) (*block, error) {
 			chain.logger.Error("failed to decode data from DB: %s", err.Error())
 			return nil, err
 		}
-//		chain.logger.Debug("fetched block from DB: %x", *hash)
+		chain.logger.Debug("fetched block from DB: %x", *hash)
 		return block, nil
 	}
 }
@@ -139,7 +140,7 @@ func (chain *BlockChainConsensus) getBlock(hash *core.Byte64) (*block, error) {
 // persist a blocknode into DB
 func (chain *BlockChainConsensus) putChainNode(node *chainNode) error {
 	if data, err := common.Serialize(node); err == nil {
-//		chain.logger.Debug("Saved chain node in DB: %x", *node.hash())
+		chain.logger.Debug("Saved chain node in DB: %x", *node.hash())
 		return chain.db.Put(tableKey(tableChainNode, node.hash()), data)
 	} else {
 		return err
@@ -150,7 +151,7 @@ func (chain *BlockChainConsensus) putChainNode(node *chainNode) error {
 // persist a block into DB
 func (chain *BlockChainConsensus) putBlock(block *block) error {
 	if data, err := serializeBlock(block); err == nil {
-//		chain.logger.Debug("Saved block in DB: %x", *block.Hash())
+		chain.logger.Debug("Saved block in DB: %x", *block.Hash())
 		return chain.db.Put(tableKey(tableBlock, block.Hash()), data)
 	} else {
 		return err
@@ -528,6 +529,22 @@ func (c *BlockChainConsensus) findMainListChild(parent, skipChild *chainNode) *c
 	return nil
 }
 
+func (c *BlockChainConsensus) Block(hash *core.Byte64) (Block, error) {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	if block, err := c.getBlock(hash); err != nil {
+		return nil, err
+	} else {
+		// create a copy of world state from block's world view
+		state := trie.NewMptWorldState(c.db)
+		if err := state.Rebase(block.STATE); err != nil {
+			c.logger.Error("failed to initialize block's world state: %s", err.Error())
+			return nil, core.NewCoreError(ERR_STATE_INCORRECT, "worldstate error")
+		}
+		return block, nil
+	}
+}
+
 // a copy of best block in current cannonical chain, used by protocol manager for handshake
 func (c *BlockChainConsensus) BestBlock() Block {
 	c.lock.RLock()
@@ -543,7 +560,8 @@ func (c *BlockChainConsensus) BestBlock() Block {
 }
 
 // ordered list of serialized descendents from specific parent, on the current canonical chain
-func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([][]byte, error) {
+//func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([][]byte, error) {
+func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([]Block, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 
@@ -551,8 +569,11 @@ func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([][]byt
 	if max > maxBlocks {
 		max = maxBlocks
 	}
-	// create placeholder for deserialized descendents
-	descendents := make([][]byte, 0, max)
+//	// create placeholder for deserialized descendents
+//	descendents := make([][]byte, 0, max)
+	// create placeholder for  descendents
+	descendents := make([]Block, 0, max)
+
 	// loop over fetching chainNode and its mainlist descendents
 	count := 0
 	for parentNode, err := c.getChainNode(parent); count < max; count++{
@@ -576,13 +597,15 @@ func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([][]byt
 			c.logger.Error("failed to fetch descendent block: %s", err.Error())
 			return descendents, err
 		} else {
-			// add serialized block to descendents list
-			if data, err := serializeBlock(child); err == nil {
-				descendents = append(descendents, data)
-			} else {
-				c.logger.Error("failed to serialize descendent block: %s", err.Error())
-				return descendents, err
-			}
+//			// add serialized block to descendents list
+//			if data, err := serializeBlock(child); err == nil {
+//				descendents = append(descendents, data)
+//			} else {
+//				c.logger.Error("failed to serialize descendent block: %s", err.Error())
+//				return descendents, err
+//			}
+			// add descendent to list
+			descendents = append(descendents, child)
 		}
 		// move down descendent list
 		parentNode = childNode
