@@ -287,6 +287,8 @@ func (b *invalidType) AddTransaction(tx *Transaction) error {return nil}
 
 func (b *invalidType) Hash() *core.Byte64 {return nil}
 
+func (b *invalidType) Spec() BlockSpec {return BlockSpec{}}
+
 func TestSerializeInvalid(t *testing.T) {
 	if _, err := serializeBlock(nil); err == nil {
 		t.Errorf("Serialization failed to detect nil block")

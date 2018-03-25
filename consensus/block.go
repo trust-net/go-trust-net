@@ -23,6 +23,7 @@ type Block interface {
 	Transactions() []Transaction
 	AddTransaction(tx *Transaction) error
 	Hash() *core.Byte64
+	Spec() BlockSpec
 }
 
 // these are the fields that actually go over the wire
@@ -37,6 +38,25 @@ type BlockSpec struct {
 	UNCLEs []core.Byte64
 	NONCE core.Byte8
 }
+
+//func (b *BlockSpec) Block() Block {
+//	b &block{
+//		BlockSpec: BlockSpec {
+//			PHASH: b.PHASH,
+//			MINER: b.MINER,
+//			STATE: b.STATE,
+//			TXs: make([]Transaction, len(b.TXs),
+//			TS: b.TS,
+//			DEPTH: b.DEPTH,
+//			WT: b.WT,
+//			UNCLEs: make([]core.Byte64, len(b.UNCLEs),
+//			NONCE: b.NONCE,
+//		},
+////		hash: b.PHASH,
+////		worldState: state,
+//		isNetworkBlock: true,
+//	}
+//}
 
 func init() {
 	gob.Register(&BlockSpec{})
@@ -195,6 +215,32 @@ func (b *block) clone(state trie.WorldState) *block {
 		worldState: state,
 		isNetworkBlock: false,
 	}
+}
+
+// create a copy of block sendable on wire
+func (b *block) Spec() BlockSpec {
+	spec := BlockSpec{
+		PHASH: b.PHASH,
+		MINER: b.MINER,
+		TXs: make([]Transaction,len(b.TXs)),
+		TS: b.TS,
+		DEPTH: b.DEPTH,
+		WT: b.WT,
+		UNCLEs: make([]core.Byte64,len(b.UNCLEs)),
+		NONCE: b.NONCE,
+	}
+	if b.worldState != nil {
+		spec.STATE = b.worldState.Hash()
+	} else {
+		spec.STATE = b.STATE
+	}
+	for i, tx := range b.TXs {
+		spec.TXs[i] = tx
+	}
+	for i, uncle := range b.UNCLEs {
+		spec.UNCLEs[i] = uncle
+	}
+	return spec
 }
 
 // private method, can only be invoked by DAG implementation, so can be initiaized correctly

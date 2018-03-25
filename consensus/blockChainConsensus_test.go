@@ -28,7 +28,7 @@ func TestNewBlockChainConsensusGenesis(t *testing.T) {
 	db, _ := db.NewDatabaseInMem()
 	// verify that blockchain instance implements Consensus interface
 	var consensus Consensus
-	consensus, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	consensus, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -46,7 +46,7 @@ func TestNewBlockChainConsensusPutChainNode(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	// verify that blockchain reports error when cannot save dag tip 
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	err = c.putChainNode(&chainNode{Hash: core.BytesToByte64(nil),})
 	if err != nil{
 		t.Errorf("failed to put chain node into db: %s", err)
@@ -57,7 +57,7 @@ func TestNewBlockChainConsensusPutChainNode(t *testing.T) {
 func TestNewBlockChainConsensusFromTip(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if c == nil {
 		t.Errorf("got nil instance")
 		return
@@ -78,7 +78,7 @@ func TestNewBlockChainConsensusFromTip(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	// at this time, DB should have tip pointing to child block above,
 	// so create a new instance of blockchain and check if it initialized correctly
-	c, err = NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err = NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -99,7 +99,7 @@ func TestNewCandidateBlock(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	// verify that blockchain instance implements Consensus interface
-	c, _ := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, _ := NewBlockChainConsensus(genesisTime, testNode, db)
 	if c == nil {
 		t.Errorf("got nil instance")
 		return
@@ -118,7 +118,7 @@ func TestNewCandidateBlock(t *testing.T) {
 func TestMineCandidateBlock(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -157,7 +157,7 @@ func TestMineCandidateBlock(t *testing.T) {
 func TestMineCandidateBlockDuplicate(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -192,7 +192,7 @@ func TestMineCandidateBlockDuplicate(t *testing.T) {
 func TestTransactionStatus(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -236,7 +236,7 @@ func TestTransactionStatus(t *testing.T) {
 func TestDeserializeNetworkBlock(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -266,7 +266,7 @@ func TestDeserializeNetworkBlock(t *testing.T) {
 func TestDeserializeNetworkBlockWithUncle(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -305,7 +305,7 @@ func TestDeserializeNetworkBlockWithUncle(t *testing.T) {
 func TestAcceptNetworkBlock(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -337,7 +337,7 @@ func TestAcceptNetworkBlock(t *testing.T) {
 func TestAcceptNetworkBlockDuplicate(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -402,7 +402,7 @@ func addChain(chain *BlockChainConsensus, blocks []Block) error{
 func TestBlockChainConsensusHeaviestChain(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -441,11 +441,11 @@ func TestBlockChainConsensusUncleWeight(t *testing.T) {
 	// simulate 3 different concurrent nodes updating their individual blockchain instances
 	node1, node2, node3 := core.BytesToByte64([]byte("test node #1")), core.BytesToByte64([]byte("test node #2")), core.BytesToByte64([]byte("test node #3"))
 	db1, _ := db.NewDatabaseInMem()
-	chain1, _ := NewBlockChainConsensus(genesisHash, genesisTime, node1, db1)
+	chain1, _ := NewBlockChainConsensus(genesisTime, node1, db1)
 	db2, _ := db.NewDatabaseInMem()
-	chain2, _ := NewBlockChainConsensus(genesisHash, genesisTime, node2, db2)
+	chain2, _ := NewBlockChainConsensus(genesisTime, node2, db2)
 	db3, _ := db.NewDatabaseInMem()
-	chain3, _ := NewBlockChainConsensus(genesisHash, genesisTime, node3, db3)
+	chain3, _ := NewBlockChainConsensus(genesisTime, node3, db3)
 	
 	// let first node mine a block and broadcast to others
 	candidate1 := chain1.NewCandidateBlock()
@@ -482,7 +482,7 @@ func TestBlockChainConsensusUncleWeight(t *testing.T) {
 	}
 	// now, next candidate block on chain1 should have candidate2 (first recieved) as parent,
 	// and candidate3 (next recieved) as uncle
-	log.SetLogLevel(log.DEBUG)
+	log.SetLogLevel(log.NONE)
 	candidate1 = chain1.NewCandidateBlock()
 	if *candidate1.ParentHash() != *candidate2.Hash() {
 		t.Errorf("incorrect parent hash")
@@ -497,11 +497,11 @@ func TestBlockChainConsensus(t *testing.T) {
 	// simulate 3 different concurrent nodes updating their individual blockchain instances
 	node1, node2, node3 := core.BytesToByte64([]byte("test node #1")), core.BytesToByte64([]byte("test node #2")), core.BytesToByte64([]byte("test node #3"))
 	db1, _ := db.NewDatabaseInMem()
-	chain1, _ := NewBlockChainConsensus(genesisHash, genesisTime, node1, db1)
+	chain1, _ := NewBlockChainConsensus(genesisTime, node1, db1)
 	db2, _ := db.NewDatabaseInMem()
-	chain2, _ := NewBlockChainConsensus(genesisHash, genesisTime, node2, db2)
+	chain2, _ := NewBlockChainConsensus(genesisTime, node2, db2)
 	db3, _ := db.NewDatabaseInMem()
-	chain3, _ := NewBlockChainConsensus(genesisHash, genesisTime, node3, db3)
+	chain3, _ := NewBlockChainConsensus(genesisTime, node3, db3)
 
 	// define an application for this consensus platform
 	counter := 0
@@ -634,7 +634,7 @@ func TestBlockChainConsensusBestBlock(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -667,7 +667,7 @@ func TestBlockChainConsensusDescendents(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -710,7 +710,7 @@ func TestBlockChainConsensusDescendentsMaxBlocks(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -744,7 +744,7 @@ func TestBlockChainConsensusDescendentsMaxBlocksSystem(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return

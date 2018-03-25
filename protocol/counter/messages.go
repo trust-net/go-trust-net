@@ -54,11 +54,11 @@ type GetBlocksRequestMsg []core.Byte64
 
 // response with array of requested block specs
 //type GetBlocksResponseMsg []*core.BlockSpec
-type GetBlocksResponseMsg []consensus.Block
+type GetBlocksResponseMsg []consensus.BlockSpec
 
 // Announce a new countr block
 //type NewBlockMsg core.BlockSpec
-type NewBlockMsg consensus.Block
+type NewBlockMsg consensus.BlockSpec
 
 //
 //// Header implementation

@@ -30,6 +30,8 @@ type Consensus interface {
 	DeserializeNetworkBlock(data []byte) (Block, error)
 	// an equivalend implementation, to decode devP2P network block message
 	DecodeNetworkBlock(msg p2p.Msg) (Block, error)
+	// an equivalend implementation, to decode network block spec message
+	DecodeNetworkBlockSpec(spec BlockSpec) (Block, error)
 	// submit a "processed" network block, will be added to DAG appropriately
 	// (i.e. either extend canonical chain, or add as an uncle block)
 	// block's computed world state should match STATE of the deSerialized block,

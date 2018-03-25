@@ -79,7 +79,7 @@ func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 //	} else {
 //		mgr.chain = chain
 //	}
-    if engine, err := consensus.NewBlockChainConsensus(core.BytesToByte64(nil), genesisTimeStamp, mgr.miner, config.Db()); err != nil {
+    if engine, err := consensus.NewBlockChainConsensus(genesisTimeStamp, mgr.miner, config.Db()); err != nil {
 		mgr.logger.Error("Failed to create blockchain: %s", err.Error())
 		return nil
     } else {
@@ -199,7 +199,7 @@ func (mgr *CountrProtocolManager) broadCast(block consensus.Block) int {
 		peer, _ := node.(*protocol.Node)
 		// first mark this peer as has seen this message, so we can stop cyclic receive immediately
 		peer.AddTx(block.Hash())
-		peer.Send(NewBlock, block)
+		peer.Send(NewBlock, block.Spec())
 		mgr.logger.Debug("relayed message '%x' to %s", block.Hash(), peer.Peer().Name())
 		count++
 	}
@@ -234,21 +234,22 @@ func (mgr *CountrProtocolManager) syncNode(node *protocol.Node) error {
 		switch <- node.GetBlockHashesChan {
 			case protocol.CHAN_NEXT:
 				// continue to next batch
-				continue
+//				continue
 			case protocol.CHAN_ERROR:
 				return protocol.NewProtocolError(protocol.ErrorSyncFailed, "error processing sync protocol")
 			case protocol.CHAN_ABORT:
 				return protocol.NewProtocolError(protocol.ErrorSyncFailed, "sync protocol aborted")
 			case protocol.CHAN_RETRY:
 				// simply continue and retry
-				continue
+//				continue
 			case protocol.CHAN_DONE:
 				// signal that we are done
-				mgr.logger.Debug("Syncing with peer '%s' done", node.ID())
+//				mgr.logger.Debug("Syncing with peer '%s' done", node.ID())
 				return nil
 		}
-		
+		best = mgr.engine.BestBlock()
 	}
+	mgr.logger.Debug("Syncing with peer '%s' done", node.ID())
 	return nil
 }
 
@@ -388,9 +389,13 @@ func (mgr *CountrProtocolManager) processBlock(block consensus.Block, from *prot
 	}
 	// submit block for acceptance
 	if err := mgr.engine.AcceptNetworkBlock(block); err != nil {
+		mgr.logger.Error("Could not accept network block: %s", err)
 		return err
 	} else {
+		// mark the sender has having seen this message
+		from.AddTx(block.Hash())
 		// broadcast block to peers
+		mgr.logger.Debug("Forwarding accepted network block")
 		mgr.broadCast(block)
 	}
 	return nil
@@ -405,7 +410,7 @@ func (mgr *CountrProtocolManager) handleNewBlockMsg(msg p2p.Msg, from *protocol.
 		return protocol.NewProtocolError(protocol.ErrorBadBlock, err.Error())
 	} else {
 		// process the block
-		if err := mgr.processBlock(block, from); err != nil {
+		if err := mgr.processBlock(block, from); err != nil && err.(*core.CoreError).Code() != consensus.ERR_DUPLICATE_BLOCK {
 			// abort sync
 			from.GetBlockHashesChan <- protocol.CHAN_ERROR
 			return err
@@ -437,11 +442,12 @@ func (mgr *CountrProtocolManager) handleGetBlocksRequestMsg(msg p2p.Msg, to *pro
 		return protocol.NewProtocolError(protocol.ErrorInvalidRequest, "GetBlocksRequestMsg does not have any hashes")
 	}
 //	blocks := make([]*core.BlockSpec, len(hashes), len(hashes))
-	blocks := make([]consensus.Block, len(hashes), len(hashes))
+	blocks := make([]consensus.BlockSpec, len(hashes), len(hashes))
 	i := 0
 	for _, hash := range hashes {
 		if block, err := mgr.engine.Block(&hash); err == nil {
-			blocks[i] = block
+			blocks[i] = block.Spec()
+			mgr.logger.Debug("Syncing: sending block: %x", *block.Hash())
 			i++
 		}
 //		if blockNode, found := mgr.chain.BlockNode(&hash); found {
@@ -475,7 +481,7 @@ func (mgr *CountrProtocolManager) handleGetBlocksResponseMsg(msg p2p.Msg, from *
 		return protocol.NewProtocolError(protocol.ErrorSyncFailed, err.Error())
 	}
 //	specs := []*core.BlockSpec(response)
-	specs := []consensus.Block(response)
+	specs := []consensus.BlockSpec(response)
 	if len(specs) < 1 {
 		mgr.logger.Error("GetBlocksResponseMsg does not have any blocks from '%s'", from.ID())
 		return protocol.NewProtocolError(protocol.ErrorInvalidRequest, "GetBlocksResponseMsg does not have any blocks")
@@ -486,7 +492,13 @@ func (mgr *CountrProtocolManager) handleGetBlocksResponseMsg(msg p2p.Msg, from *
 	for _, spec := range specs {
 		// process the new block, and ignore duplicate add errors
 //		if delta, hash, err := mgr.processBlockSpec(spec, from); err != nil && err.(*core.CoreError).Code() != core.ERR_DUPLICATE_BLOCK {
-		if err := mgr.processBlock(spec, from); err != nil && err.(*core.CoreError).Code() != consensus.ERR_DUPLICATE_BLOCK {
+		var block consensus.Block
+		var err error
+		if block, err = mgr.engine.DecodeNetworkBlockSpec(spec); err != nil {
+			mgr.logger.Error("Failed to decode network block spec: %s", err)
+			return err
+		}
+		if err := mgr.processBlock(block, from); err != nil && err.(*core.CoreError).Code() != consensus.ERR_DUPLICATE_BLOCK {
 			// abort sync
 			from.GetBlockHashesChan <- protocol.CHAN_ERROR
 			return err
@@ -495,7 +507,7 @@ func (mgr *CountrProtocolManager) handleGetBlocksResponseMsg(msg p2p.Msg, from *
 //			if err == nil {
 //				mgr.state.Countr += delta
 //			}
-			from.LastHash = spec.Hash()
+			from.LastHash = block.Hash()
 		}
 	}
 	// done processing batch of hashes, ask for next batch
@@ -531,6 +543,7 @@ func (mgr *CountrProtocolManager) handleGetBlockHashesRequestMsg(msg p2p.Msg, fr
 	hashes := make([]core.Byte64, len(blocks), len(blocks))
 	for i, block := range blocks {
 		hashes[i] = *block.Hash()
+		mgr.logger.Debug("Adding hash to response: %x", hashes[i])
 	}
 	// send back the hashes in response
 	if err := from.Send(GetBlockHashesResponse, GetBlockHashesResponseMsg(hashes)); err != nil {
@@ -550,6 +563,9 @@ func (mgr *CountrProtocolManager) handleGetBlockHashesResponseMsg(msg p2p.Msg, f
 	}
 	hashes := []core.Byte64(response)
 	mgr.logger.Debug("Syncing: received '%d' hashes from '%s'", len(hashes), from.ID())
+	for _, hash := range hashes {
+		mgr.logger.Debug("Syncing: received hash: %x", hash)
+	}
 	if len(hashes) < 1 {
 		// no hashesh to fetch
 		from.GetBlockHashesChan <- protocol.CHAN_DONE

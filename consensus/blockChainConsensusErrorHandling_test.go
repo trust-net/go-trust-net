@@ -57,7 +57,7 @@ func TestErrorNewBlockChainConsensusDagTipSaveError(t *testing.T) {
 		},
 	}
 	// verify that blockchain reports error when cannot save dag tip 
-	_, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	_, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err == nil || err.Error() != "put dag tip error" {
 		t.Errorf("failed to report error when cannot save DAG tip: %s", err)
 		return
@@ -76,7 +76,7 @@ func TestErrorNewBlockChainConsensusGenesisBlockSaveError(t *testing.T) {
 		},
 	}
 	// verify that blockchain reports error when cannot save dag tip 
-	_, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	_, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err == nil || err.Error() != "put genesis block error" {
 		t.Errorf("failed to report error when cannot save genesis block: %s", err)
 		return
@@ -97,7 +97,7 @@ func TestErrorNewBlockChainConsensusGenesisChainNodeSaveError(t *testing.T) {
 		},
 	}
 	// verify that blockchain reports error when cannot save dag tip 
-	_, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	_, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err == nil || err.Error() != "put genesis chain node error" {
 		t.Errorf("failed to report error when cannot save genesis block: %s", err)
 		return
@@ -115,7 +115,7 @@ func TestErrorNewBlockChainConsensusGetTipBlockError(t *testing.T) {
 		},
 	}
 	// verify that blockchain reports error when cannot save dag tip 
-	_, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	_, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err == nil || err.Error() != "get dag block error" {
 		t.Errorf("failed to report error when cannot get DAG block: %s", err)
 		return
@@ -126,7 +126,7 @@ func TestErrorNewBlockChainConsensusGetBlockDbError(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	// verify that blockchain reports error when cannot get block 
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	// override chain db to a mock and return error
 	c.db = &errorDb {
 		values: []error{
@@ -144,7 +144,7 @@ func TestErrorNewBlockChainConsensusGetBlockDeSerializeError(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	// verify that blockchain reports error when cannot deserialize block 
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	// override chain db to a mock and return error
 	c.db = &errorDb {
 		values: []error{
@@ -162,7 +162,7 @@ func TestErrorNewBlockChainConsensusPutBlockError(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	// verify that blockchain reports error when cannot save block 
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	// override chain db to a mock and return error
 	block := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
 	err = c.putBlock(block)
@@ -176,7 +176,7 @@ func TestErrorNewBlockChainConsensusGetChainNodeDbError(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	// verify that blockchain reports error when cannot save dag tip 
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	// override chain db to a mock and return error
 	c.db = &errorDb {
 		values: []error{
@@ -194,7 +194,7 @@ func TestErrorNewBlockChainConsensusGetChainNodeDeSerializeError(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	// verify that blockchain reports error when cannot save dag tip 
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	// override chain db to a mock and return error
 	c.db = &errorDb {
 		values: []error{
@@ -211,7 +211,7 @@ func TestErrorNewBlockChainConsensusGetChainNodeDeSerializeError(t *testing.T) {
 func TestErrorDeserializeNetworkBlockDeSerializeError(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	consensus, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	consensus, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || consensus == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -226,7 +226,7 @@ func TestErrorDeserializeNetworkBlockDeSerializeError(t *testing.T) {
 func TestErrorDeserializeNetworkBlockNoParent(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -243,7 +243,7 @@ func TestErrorDeserializeNetworkBlockNoParent(t *testing.T) {
 func TestErrorDeserializeNetworkBlockIncorrectDepth(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -260,7 +260,7 @@ func TestErrorDeserializeNetworkBlockIncorrectDepth(t *testing.T) {
 func TestErrorDeserializeNetworkBlockIncorrectWeight(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -278,7 +278,7 @@ func TestErrorDeserializeNetworkBlockIncorrectWeight(t *testing.T) {
 func TestErrorDeserializeNetworkBlockIncorrectUncle(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -296,7 +296,7 @@ func TestErrorDeserializeNetworkBlockIncorrectUncle(t *testing.T) {
 func TestErrorAcceptNetworkBlockIncorrectState(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -320,7 +320,7 @@ func TestErrorAcceptNetworkBlockIncorrectState(t *testing.T) {
 func TestErrorAcceptNetworkBlockNoParent(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	c, err := NewBlockChainConsensus(genesisHash, genesisTime, testNode, db)
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
 		t.Errorf("failed to get blockchain consensus instance: %s", err)
 		return
@@ -330,5 +330,29 @@ func TestErrorAcceptNetworkBlockNoParent(t *testing.T) {
 	child.computeHash()
 	if err = c.AcceptNetworkBlock(child); err == nil || err.(*core.CoreError).Code() != ERR_BLOCK_ORPHAN {
 		t.Errorf("failed to detect orphan network block")
+	}
+}
+
+func TestErrorAddValidatedBlockNoParentChainNode(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+	// build a chain of blocks
+	chain := makeBlocks(2,c.tip, c)
+	if err := addChain(c, chain); err != nil {
+		t.Errorf("failed to add network block: %s", err)
+	}
+	// now change hashes to something not in DB
+	chain[0].(*block).hash = core.BytesToByte64([]byte("some random hash 1"))
+	chain[1].(*block).hash = core.BytesToByte64([]byte("some random hash 2"))
+	// try adding these blocks as "validated" blocks
+	log.SetLogLevel(log.DEBUG)
+	if err = c.addValidatedBlock(chain[1].(*block), chain[0].(*block)); err == nil || err.(*core.CoreError).Code() != ERR_DB_CORRUPTED {
+		t.Errorf("failed to detect error in chain node for parent: %s", err)
 	}
 }

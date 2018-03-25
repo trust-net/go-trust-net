@@ -44,7 +44,7 @@ type BlockChainConsensus struct {
 }
 
 // application is responsible to create an instance of DB initialized to application's name space
-func NewBlockChainConsensus(genesisHash *core.Byte64, genesisTime uint64,
+func NewBlockChainConsensus(genesisTime uint64,
 	minerId *core.Byte64, db db.Database) (*BlockChainConsensus, error) {
 	chain := BlockChainConsensus{
 		db: db,
@@ -56,7 +56,6 @@ func NewBlockChainConsensus(genesisHash *core.Byte64, genesisTime uint64,
 	// genesis is statically defined using default values
 	genesisBlock := newBlock(genesisParent, 0, 0, genesisTime, core.BytesToByte64(nil), chain.state)
 	genesisBlock.computeHash()
-//	genesisBlock.hash = genesisHash
 	chain.genesisNode = newChainNode(genesisBlock)
 	chain.genesisNode.setMainList(true)
 
@@ -116,7 +115,7 @@ func (chain *BlockChainConsensus) getChainNode(hash *core.Byte64) (*chainNode, e
 			chain.logger.Error("failed to decode data from DB: %s", err.Error())
 			return nil, err
 		}
-		chain.logger.Debug("Fetched chain node from DB: %x", *hash)
+//		chain.logger.Debug("Fetched chain node from DB: %x", *hash)
 		return &node, nil
 	}
 }
@@ -132,7 +131,7 @@ func (chain *BlockChainConsensus) getBlock(hash *core.Byte64) (*block, error) {
 			chain.logger.Error("failed to decode data from DB: %s", err.Error())
 			return nil, err
 		}
-		chain.logger.Debug("fetched block from DB: %x", *hash)
+//		chain.logger.Debug("fetched block from DB: %x", *hash)
 		return block, nil
 	}
 }
@@ -140,7 +139,7 @@ func (chain *BlockChainConsensus) getBlock(hash *core.Byte64) (*block, error) {
 // persist a blocknode into DB
 func (chain *BlockChainConsensus) putChainNode(node *chainNode) error {
 	if data, err := common.Serialize(node); err == nil {
-		chain.logger.Debug("Saved chain node in DB: %x", *node.hash())
+//		chain.logger.Debug("Saved chain node in DB: %x", *node.hash())
 		return chain.db.Put(tableKey(tableChainNode, node.hash()), data)
 	} else {
 		return err
@@ -151,7 +150,7 @@ func (chain *BlockChainConsensus) putChainNode(node *chainNode) error {
 // persist a block into DB
 func (chain *BlockChainConsensus) putBlock(block *block) error {
 	if data, err := serializeBlock(block); err == nil {
-		chain.logger.Debug("Saved block in DB: %x", *block.Hash())
+//		chain.logger.Debug("Saved block in DB: %x", *block.Hash())
 		return chain.db.Put(tableKey(tableBlock, block.Hash()), data)
 	} else {
 		return err
@@ -408,20 +407,47 @@ func (c *BlockChainConsensus) DeserializeNetworkBlock(data []byte) (Block, error
 }
 
 func (c *BlockChainConsensus) DecodeNetworkBlock(msg p2p.Msg) (Block, error) {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
-	var newBlock block
-	if err := msg.Decode(&newBlock); err != nil {
+//	c.lock.RLock()
+//	defer c.lock.RUnlock()
+	var spec BlockSpec
+	if err := msg.Decode(&spec); err != nil {
 		c.logger.Error("failed to decode p2p network block: %s", err)
 		return nil, err
 	}
+	// process the block spec
+	return c.DecodeNetworkBlockSpec(spec)
+}
+
+func (c *BlockChainConsensus) DecodeNetworkBlockSpec(spec BlockSpec) (Block, error) {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	newBlock := &block{
+		BlockSpec: BlockSpec {
+			PHASH: spec.PHASH,
+			MINER: spec.MINER,
+			STATE: spec.STATE,
+			TXs: make([]Transaction, len(spec.TXs)),
+			TS: spec.TS,
+			DEPTH: spec.DEPTH,
+			WT: spec.WT,
+			UNCLEs: make([]core.Byte64, len(spec.UNCLEs)),
+			NONCE: spec.NONCE,
+		},
+	}
+	for i,tx := range spec.TXs {
+		newBlock.TXs[i] = tx
+	}
+	for i,uncle := range spec.UNCLEs {
+		newBlock.UNCLEs[i] = uncle
+	}
 	// process the block
-	return c.processNetworkBlock(&newBlock)
+	return c.processNetworkBlock(newBlock)
 }
 
 func (c *BlockChainConsensus) processNetworkBlock(b *block) (Block, error) {
 	// set the network flag on block
 	b.isNetworkBlock = true
+	b.computeHash()
 
 	// validate block
 	var parent *block
@@ -462,7 +488,8 @@ func (c *BlockChainConsensus) AcceptNetworkBlock(b Block) error {
 // block has been validated (either mined local block, or processed network block) 
 func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 	// verify that this is not a duplicate block
-	if _, err := c.getChainNode(child.Hash()); err == nil {
+	var err error
+	if _, err = c.getChainNode(child.Hash()); err == nil {
 		c.logger.Error("block already exists: %x", *child.Hash())
 		return core.NewCoreError(ERR_DUPLICATE_BLOCK, "duplicate block")
 	}
@@ -470,7 +497,11 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 	childNode := newChainNode(child)
 	c.putBlock(child)
 	// fetch parent's chain node
-	parentNode,_ := c.getChainNode(parent.Hash())
+	var parentNode *chainNode
+	if parentNode,err = c.getChainNode(parent.Hash()); err != nil {
+		c.logger.Error("failed to find chain node for block!!!: %s", err)
+		return core.NewCoreError(ERR_DB_CORRUPTED, "missing chain node")
+	}
 	// update parent's children list
 	parentNode.addChild(child.Hash())
 	c.putChainNode(parentNode)
@@ -574,41 +605,30 @@ func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([]Block
 	// create placeholder for  descendents
 	descendents := make([]Block, 0, max)
 
+	var parentNode *chainNode
+	var err error
+	if parentNode, err = c.getChainNode(parent); err != nil {
+		c.logger.Error("failed to fetch parent of descendents: %s", err.Error())
+		return descendents, err
+	}
+	// validate that its on canonical chain
+	if !parentNode.isMainList() {
+		c.logger.Error("fetched parent of descendent not on mainlist")
+		return descendents, core.NewCoreError(ERR_NOT_MAINLIST, "parent not on mainlist")
+	}
 	// loop over fetching chainNode and its mainlist descendents
 	count := 0
-	for parentNode, err := c.getChainNode(parent); count < max; count++{
-		if err != nil {
-			c.logger.Error("failed to fetch parent of descendents: %s", err.Error())
-			return descendents, err
-		}
-		// validate that its on canonical chain
-		if !parentNode.isMainList() {
-			c.logger.Error("fetched parent of descendent not on mainlist")
-			return descendents, core.NewCoreError(ERR_NOT_MAINLIST, "parent not on mainlist")
-		}
-		// fetch parent's descendent on main list
-		childNode := c.findMainListChild(parentNode, nil)
-		if childNode == nil {
-			c.logger.Error("no more descendents on mainlist")
-			return descendents, nil
-		}
+	for childNode := c.findMainListChild(parentNode, nil); childNode != nil && count < max; count++{
 		// fetch actual block for this child node
 		if child, err := c.getBlock(childNode.hash()); err != nil {
 			c.logger.Error("failed to fetch descendent block: %s", err.Error())
 			return descendents, err
 		} else {
-//			// add serialized block to descendents list
-//			if data, err := serializeBlock(child); err == nil {
-//				descendents = append(descendents, data)
-//			} else {
-//				c.logger.Error("failed to serialize descendent block: %s", err.Error())
-//				return descendents, err
-//			}
-			// add descendent to list
+			c.logger.Error("adding descendent block: %x", *child.Hash())
 			descendents = append(descendents, child)
 		}
 		// move down descendent list
-		parentNode = childNode
+		childNode = c.findMainListChild(childNode, nil)
 	}
 	
 	return descendents, nil
