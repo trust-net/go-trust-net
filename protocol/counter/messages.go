@@ -3,6 +3,7 @@ package counter
 import (
 	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/protocol"
+	"github.com/trust-net/go-trust-net/consensus"
 )
 
 // protocol messages
@@ -52,10 +53,12 @@ type GetBlockHashesRewindMsg core.Byte64
 type GetBlocksRequestMsg []core.Byte64
 
 // response with array of requested block specs
-type GetBlocksResponseMsg []*core.BlockSpec
+//type GetBlocksResponseMsg []*core.BlockSpec
+type GetBlocksResponseMsg []consensus.BlockSpec
 
 // Announce a new countr block
-type NewBlockMsg core.BlockSpec
+//type NewBlockMsg core.BlockSpec
+type NewBlockMsg consensus.BlockSpec
 
 //
 //// Header implementation
