@@ -33,6 +33,7 @@ type logger struct {
 	debug	*log.Logger
 	info		*log.Logger
 	err		*log.Logger
+	prefix string
 }
 // application wide log level, can be changed dynamically
 var logLevel = DEBUG
@@ -75,6 +76,7 @@ func AppLogger() Logger {
 			debug: log.New(getLogFile(), "DEBUG|", log.LstdFlags|log.Lmicroseconds),
 			info: log.New(getLogFile(),  "INFO |", log.LstdFlags|log.Lmicroseconds),
 			err: log.New(getLogFile(),   "ERROR|", log.LstdFlags|log.Lmicroseconds),
+			prefix: "|APP| ",
 			}
 		}
 	}
@@ -82,11 +84,15 @@ func AppLogger() Logger {
 }
 
 func NewLogger(name interface{}) Logger {
-	prefix := fmt.Sprintf("%T|",name)
+	prefix := fmt.Sprintf("|%T| ",name)
 	return &logger {
-		debug: log.New(getLogFile(), "DEBUG|"+prefix, log.LstdFlags|log.Lmicroseconds),
-		info: log.New(getLogFile(),  "INFO |"+prefix, log.LstdFlags|log.Lmicroseconds),
-		err: log.New(getLogFile(),   "ERROR|"+prefix, log.LstdFlags|log.Lmicroseconds),
+//		debug: log.New(getLogFile(), "DEBUG|"+prefix, log.LstdFlags|log.Lmicroseconds),
+//		info: log.New(getLogFile(),  "INFO |"+prefix, log.LstdFlags|log.Lmicroseconds),
+//		err: log.New(getLogFile(),   "ERROR|"+prefix, log.LstdFlags|log.Lmicroseconds),
+		debug: log.New(getLogFile(), "DEBUG|", log.LstdFlags|log.Lmicroseconds),
+		info: log.New(getLogFile(),  "INFO |", log.LstdFlags|log.Lmicroseconds),
+		err: log.New(getLogFile(),   "ERROR|", log.LstdFlags|log.Lmicroseconds),
+		prefix: prefix,
 	}
 }
 
@@ -94,19 +100,19 @@ func (l *logger) Debug(format string, args... interface{}) {
 	if logLevel > DEBUG {
 		return
 	}
-	l.debug.Printf(format, args...)
+	l.debug.Printf(l.prefix+format, args...)
 }
 
 func (l *logger) Info(format string, args... interface{}) {
 	if logLevel > INFO {
 		return
 	}
-	l.info.Printf(format, args...)
+	l.info.Printf(l.prefix+format, args...)
 }
 
 func (l *logger) Error(format string, args... interface{}) {
 	if logLevel > ERROR {
 		return
 	}
-	l.err.Printf(format, args...)
+	l.err.Printf(l.prefix+format, args...)
 }

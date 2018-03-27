@@ -351,7 +351,6 @@ func TestErrorAddValidatedBlockNoParentChainNode(t *testing.T) {
 	chain[0].(*block).hash = core.BytesToByte64([]byte("some random hash 1"))
 	chain[1].(*block).hash = core.BytesToByte64([]byte("some random hash 2"))
 	// try adding these blocks as "validated" blocks
-	log.SetLogLevel(log.DEBUG)
 	if err = c.addValidatedBlock(chain[1].(*block), chain[0].(*block)); err == nil || err.(*core.CoreError).Code() != ERR_DB_CORRUPTED {
 		t.Errorf("failed to detect error in chain node for parent: %s", err)
 	}

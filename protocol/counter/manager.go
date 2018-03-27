@@ -100,8 +100,8 @@ func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 //	return nil
 //}
 
-func (mgr *CountrProtocolManager) Countr() uint64 {
-	countr,_ := mgr.countr(countrName, mgr.engine.BestBlock())
+func (mgr *CountrProtocolManager) Countr(name string) uint64 {
+	countr,_ := mgr.countr(name, mgr.engine.BestBlock())
 	return countr
 }
 
@@ -124,6 +124,20 @@ func (mgr *CountrProtocolManager) Shutdown() {
 	mgr.logger.Debug("shutting down counter protocol manager")
 }
 
+func makeTransactionPayload(name string, opCode *core.Byte8) []byte {
+	data := make([]byte, 0, len(name)+8)
+	data = append(data, opCode.Bytes()...)
+	data = append(data, []byte(name)...)
+	return data
+} 
+
+func getTransactionFromPayload(data []byte) (string, *core.Byte8) {
+	if len(data) < 9 {
+		return "", nil
+	}
+	return string(data[8:]), core.BytesToByte8(data[:8])	
+} 
+
 func (mgr *CountrProtocolManager) delta(name string, opCode *core.Byte8) bool {
 	// create new block and add to my blockchain
 	block := mgr.engine.NewCandidateBlock()
@@ -141,13 +155,17 @@ func (mgr *CountrProtocolManager) delta(name string, opCode *core.Byte8) bool {
 			result = block.Update([]byte(name), core.Uint64ToByte8(current-1).Bytes())
 	}
 	if result {
-		result = block.AddTransaction(consensus.NewTransaction(opCode.Bytes(), mgr.miner)) == nil
+		result = block.AddTransaction(consensus.NewTransaction(makeTransactionPayload(name, opCode), mgr.miner)) == nil
 	}
 	// submit block for mining
 	done := make(chan struct{})
 	mgr.engine.MineCandidateBlock(block, func(block consensus.Block, err error) {
 			result = err == nil
-			defer func() {done <- struct{}{}}()
+			defer func() {
+				mgr.logger.Debug("about to send signal from callback")
+				done <- struct{}{}
+				mgr.logger.Debug("done sending signal from callback")
+			}()
 			if err != nil {
 				mgr.logger.Error("failed to mine candidate block: %s", err)
 				return
@@ -157,40 +175,42 @@ func (mgr *CountrProtocolManager) delta(name string, opCode *core.Byte8) bool {
 			mgr.logger.Debug("Relayed new block to %d peers", count)
 	});
 	// wait for our callback to finish
+	mgr.logger.Debug("waiting for signal from callback")
 	<-done
+	mgr.logger.Debug("recieved signal from callback")
 	return result
 }
 
-func (mgr *CountrProtocolManager) Increment(delta int) (uint64) {
+func (mgr *CountrProtocolManager) Increment(name string, delta int) (uint64) {
 //	if countr, err := mgr.Countr(name); err != nil {
 //		return nil, err
 //	} else {
 //		mgr.logger.Debug("Incrementing network counter from '%d' --> '%d'", countr, countr+uint64(delta))
 		for delta > 0 {
-			if  mgr.delta(countrName, OpIncrement) {
+			if  mgr.delta(name, OpIncrement) {
 				delta--
 			} else {
 				return 0
 			}
 		}
 //	}
-	return mgr.Countr()
+	return mgr.Countr(countrName)
 }
 
-func (mgr *CountrProtocolManager) Decrement(delta int) (uint64) {
+func (mgr *CountrProtocolManager) Decrement(name string, delta int) (uint64) {
 //	if countr, err := mgr.Countr(name); err != nil {
 //		return nil, err
 //	} else {
 //		mgr.logger.Debug("Incrementing network counter from '%d' --> '%d'", countr, countr-uint64(delta))
 		for delta > 0 {
-			if  mgr.delta(countrName, OpDecrement) {
+			if  mgr.delta(name, OpDecrement) {
 				delta--
 			} else {
 				return 0
 			}
 		}
 //	}
-	return mgr.Countr()
+	return mgr.Countr(countrName)
 }
 
 func (mgr *CountrProtocolManager) broadCast(block consensus.Block) int {
@@ -366,21 +386,27 @@ func (mgr *CountrProtocolManager) handleGetBlockHashesRewindMsg(msg p2p.Msg, fro
 }
 
 func (mgr *CountrProtocolManager) processBlock(block consensus.Block, from *protocol.Node) error {
-	current, err := mgr.countr(countrName, block)
-	if err != nil {
-		mgr.logger.Error("Failed to get current countr value: %s", err)
-		// using default value
-//		return false
-	}
 	// process block transactions
 	for _,tx := range block.Transactions() {
 		result := false
-		opCode := core.BytesToByte8(tx.Payload)
+		name, opCode := getTransactionFromPayload(tx.Payload)
+		if opCode == nil {
+			mgr.logger.Error("Invalid transaction: %s", tx)
+			return core.NewCoreError(consensus.ERR_INVALID_TX, "transaction error")
+		}
+		current, err := mgr.countr(name, block)
+		if err != nil {
+			mgr.logger.Error("Failed to get current countr value: %s", err)
+			// using default value
+	//		return false
+		}
 		switch *opCode {
 			case *OpIncrement:
-				result = block.Update([]byte(countrName), core.Uint64ToByte8(current+1).Bytes())
+				result = block.Update([]byte(name), core.Uint64ToByte8(current+1).Bytes())
 			case *OpDecrement:
-				result = block.Update([]byte(countrName), core.Uint64ToByte8(current-1).Bytes())
+				result = block.Update([]byte(name), core.Uint64ToByte8(current-1).Bytes())
+			default:
+				mgr.logger.Error("Invalid opcode: %s", *opCode)
 		}
 		if !result {
 			// there was some problem during processing the transaction
@@ -389,13 +415,13 @@ func (mgr *CountrProtocolManager) processBlock(block consensus.Block, from *prot
 	}
 	// submit block for acceptance
 	if err := mgr.engine.AcceptNetworkBlock(block); err != nil {
-		mgr.logger.Error("Could not accept network block: %s", err)
+		mgr.logger.Error("%s: Could not accept network block: %s", from.ID(), err)
 		return err
 	} else {
 		// mark the sender has having seen this message
 		from.AddTx(block.Hash())
 		// broadcast block to peers
-		mgr.logger.Debug("Forwarding accepted network block")
+		mgr.logger.Debug("Forwarding accepted network block from %s", from.ID())
 		mgr.broadCast(block)
 	}
 	return nil

@@ -494,6 +494,7 @@ func TestBlockChainConsensusUncleWeight(t *testing.T) {
 
 func TestBlockChainConsensus(t *testing.T) {
 	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
 	// simulate 3 different concurrent nodes updating their individual blockchain instances
 	node1, node2, node3 := core.BytesToByte64([]byte("test node #1")), core.BytesToByte64([]byte("test node #2")), core.BytesToByte64([]byte("test node #3"))
 	db1, _ := db.NewDatabaseInMem()
@@ -505,7 +506,7 @@ func TestBlockChainConsensus(t *testing.T) {
 
 	// define an application for this consensus platform
 	counter := 0
-	lock := sync.RWMutex{}
+	var lock sync.RWMutex
 	nodeFunc := func(myChain *BlockChainConsensus, myNode *core.Byte64) {
 		// wait random time and grab lock for one instance of application
 		time.Sleep(time.Millisecond * time.Duration(rand.Intn(200)))
@@ -517,84 +518,79 @@ func TestBlockChainConsensus(t *testing.T) {
 
 		// create a mining callback handler for this candidate block
 		done := make(chan struct{})
-		var minedBlock []byte
-//		miningCallback := func(data []byte, err error) {
 		miningCallback := func(block Block, err error) {
 				defer func() {
 					done <- struct{}{}
 				}()
 				if err != nil {
 					t.Errorf("failed to mine candidate block: %s", err)
-					minedBlock = nil
 					return
 				}
 				// simulate mining delay
 				time.Sleep(time.Millisecond * time.Duration(rand.Intn(200)))
-				minedBlock, err = serializeBlock(block)
+				// broadcast mining block to network
+				spec := block.Spec()
+				switch myChain {
+					case chain1:
+					go func() {
+						// broadcast network block
+						if b, err := chain2.DecodeNetworkBlockSpec(spec); err != nil {
+							t.Errorf("failed to decode network block: %s", err)
+						} else {
+							if err := chain2.AcceptNetworkBlock(b); err != nil {
+								t.Errorf("failed to accept block: %s", err)
+							}
+						}
+						if b, err := chain3.DecodeNetworkBlockSpec(spec); err != nil {
+							t.Errorf("failed to decode network block: %s", err)
+						} else {
+							if err := chain3.AcceptNetworkBlock(b); err != nil {
+								t.Errorf("failed to accept block: %s", err)
+							}
+						}
+					}()
+					case chain2:
+					go func() {
+						// broadcast network block
+						if b, err := chain3.DecodeNetworkBlockSpec(spec); err != nil {
+							t.Errorf("failed to decode network block: %s", err)
+						} else {
+							if err := chain3.AcceptNetworkBlock(b); err != nil {
+								t.Errorf("failed to accept block: %s", err)
+							}
+						}
+						if b, err := chain1.DecodeNetworkBlockSpec(spec); err != nil {
+							t.Errorf("failed to decode network block: %s", err)
+						} else {
+							if err := chain1.AcceptNetworkBlock(b); err != nil {
+								t.Errorf("failed to accept block: %s", err)
+							}
+						}
+					}()
+					case chain3:
+					go func() {
+						// broadcast network block
+						if b, err := chain1.DecodeNetworkBlockSpec(spec); err != nil {
+							t.Errorf("failed to decode network block: %s", err)
+						} else {
+							if err := chain1.AcceptNetworkBlock(b); err != nil {
+								t.Errorf("failed to accept block: %s", err)
+							}
+						}
+						if b, err := chain2.DecodeNetworkBlockSpec(spec); err != nil {
+							t.Errorf("failed to decode network block: %s", err)
+						} else {
+							if err := chain2.AcceptNetworkBlock(b); err != nil {
+								t.Errorf("failed to accept block: %s", err)
+							}
+						}
+					}()
+				}
+
 		}
 		// process mining block for application instance, and then broadcast to network
-		switch myChain {
-			case chain1:
-				// add local block
-				chain1.MineCandidateBlock(candidate, miningCallback)
-				// wait for our callback to finish
-				<-done
-				// broadcast network block
-				if b, err := chain2.DeserializeNetworkBlock(minedBlock); err != nil {
-					t.Errorf("failed to deserialize block: %s", err)
-				} else {
-					if err := chain2.AcceptNetworkBlock(b); err != nil {
-						t.Errorf("failed to accept block: %s", err)
-					}
-				}
-				if b, err := chain3.DeserializeNetworkBlock(minedBlock); err != nil {
-					t.Errorf("failed to deserialize block: %s", err)
-				} else {
-					if err := chain3.AcceptNetworkBlock(b); err != nil {
-						t.Errorf("failed to accept block: %s", err)
-					}
-				}
-			case chain2:
-				// add local block
-				chain2.MineCandidateBlock(candidate, miningCallback)
-				// wait for our callback to finish
-				<-done
-				// broadcast network block
-				if b, err := chain1.DeserializeNetworkBlock(minedBlock); err != nil {
-					t.Errorf("failed to deserialize block: %s", err)
-				} else {
-					if err := chain1.AcceptNetworkBlock(b); err != nil {
-						t.Errorf("failed to accept block: %s", err)
-					}
-				}
-				if b, err := chain3.DeserializeNetworkBlock(minedBlock); err != nil {
-					t.Errorf("failed to deserialize block: %s", err)
-				} else {
-					if err := chain3.AcceptNetworkBlock(b); err != nil {
-						t.Errorf("failed to accept block: %s", err)
-					}
-				}
-			case chain3:
-				// add local block
-				chain3.MineCandidateBlock(candidate, miningCallback)
-				// wait for our callback to finish
-				<-done
-				// broadcast network block
-				if b, err := chain1.DeserializeNetworkBlock(minedBlock); err != nil {
-					t.Errorf("failed to deserialize block: %s", err)
-				} else {
-					if err := chain1.AcceptNetworkBlock(b); err != nil {
-						t.Errorf("failed to accept block: %s", err)
-					}
-				}
-				if b, err := chain2.DeserializeNetworkBlock(minedBlock); err != nil {
-					t.Errorf("failed to deserialize block: %s", err)
-				} else {
-					if err := chain2.AcceptNetworkBlock(b); err != nil {
-						t.Errorf("failed to accept block: %s", err)
-					}
-				}
-		}
+		myChain.MineCandidateBlock(candidate, miningCallback)
+		<-done
 		counter++
 		fmt.Printf("%s : chain depth: %d, chain weight: %d, Counter: %d\n", *myNode, myChain.Tip().Depth().Uint64(), myChain.Tip().Weight().Uint64(), counter)
 	}
@@ -604,15 +600,21 @@ func TestBlockChainConsensus(t *testing.T) {
 		go nodeFunc(chain1, node1)
 		go nodeFunc(chain2, node2)
 		go nodeFunc(chain3, node3)
+		// need to make sure that each node has finished creating and broadcasting current block, before creating next block
+		for counter < (i+1)*3 {time.Sleep(time.Millisecond * 100)}
 	}
 	// wait for all nodes to finish
 	for counter < 30 {time.Sleep(time.Millisecond * 100)}
+	
+	// just wait 1 second for all blockchains to finish processing and stabilize
+	time.Sleep(time.Millisecond * 1000)
+
 	// validate that all 3 chains have same tip node hash
 	if *chain1.Tip().Hash() != *chain2.Tip().Hash() {
-		t.Errorf("tip of chain1 and chain2 are different")
+		t.Errorf("tip of chain1 and chain2 are different:\n%x\n%x", *chain1.Tip().Hash(), *chain2.Tip().Hash())
 	}
 	if *chain2.Tip().Hash() != *chain3.Tip().Hash() {
-		t.Errorf("tip of chain2 and chain3 are different")
+		t.Errorf("tip of chain2 and chain3 are different:\n%x\n%x", *chain2.Tip().Hash(), *chain3.Tip().Hash())
 	}
 	// validate that all 3 chains have same depth of main/longest chain
 	if *chain1.Tip().Depth() != *chain2.Tip().Depth() {

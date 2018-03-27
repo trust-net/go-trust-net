@@ -80,37 +80,48 @@ func CLI(c chan int, srv *p2p.Server) {
 						}
 						log.AppLogger().Debug("sent message: '%s' to %d peers", text, pagerMgr.Broadcast(msg))
 					case "countr":
-						// flush the input line
-						for wordScanner.Scan() {
-							wordScanner.Text()
+						wordScanner.Scan()
+						if name := wordScanner.Text(); len(name) == 0 {
+							fmt.Printf("usage: countr <countr name>\n")
+						} else {
+							// get current network counter value
+							fmt.Printf("%d", counterMgr.Countr(name))
 						}
-						// get current network counter value
-						fmt.Printf("%d", counterMgr.Countr())
 					case "incr":
 						wordScanner.Scan()
-						delta := 1
-						var err error
-						if word := wordScanner.Text(); len(word) != 0 {
-							if delta, err = strconv.Atoi(word); err != nil {
-								fmt.Printf("usage: incr <integer>\n")
+						if name := wordScanner.Text(); len(name) == 0 {
+							fmt.Printf("usage: incr <countr name> [<integer>]\n")
+						} else {
+							wordScanner.Scan()
+							delta := 1
+							var err error
+							if word := wordScanner.Text(); len(word) != 0 {
+								if delta, err = strconv.Atoi(word); err != nil {
+									fmt.Printf("usage: incr <countr name> [<integer>]\n")
+								}
 							}
-						}
-						// ask counter manager to increment counter
-						if err == nil {
-							counterMgr.Increment(delta)
+							// ask counter manager to increment counter
+							if err == nil {
+								counterMgr.Increment(name, delta)
+							}
 						}
 					case "decr":
 						wordScanner.Scan()
-						delta := 1
-						var err error
-						if word := wordScanner.Text(); len(word) != 0 {
-							if delta, err = strconv.Atoi(word); err != nil {
-								fmt.Printf("usage: decr <integer>\n")
+						if name := wordScanner.Text(); len(name) == 0 {
+							fmt.Printf("usage: decr <countr name> [<integer>]\n")
+						} else {
+							wordScanner.Scan()
+							delta := 1
+							var err error
+							if word := wordScanner.Text(); len(word) != 0 {
+								if delta, err = strconv.Atoi(word); err != nil {
+									fmt.Printf("usage: decr <countr name> [<integer>]\n")
+								}
 							}
-						}
-						// ask counter manager to increment counter
-						if err == nil {
-							counterMgr.Decrement(delta)
+							// ask counter manager to increment counter
+							if err == nil {
+								counterMgr.Decrement(name, delta)
+							}
 						}
 					case "add":
 						wordScanner.Scan()

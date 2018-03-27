@@ -107,7 +107,7 @@ func (c *BlockChainConsensus) Tip() Block {
 
 func (chain *BlockChainConsensus) getChainNode(hash *core.Byte64) (*chainNode, error) {
 	if data, err := chain.db.Get(tableKey(tableChainNode, hash)); err != nil {
-		chain.logger.Error("Did not find chain node in DB: %x", *hash)
+		chain.logger.Debug("Did not find chain node in DB: %x", *hash)
 		return nil, err
 	} else {
 		var node chainNode
@@ -122,7 +122,7 @@ func (chain *BlockChainConsensus) getChainNode(hash *core.Byte64) (*chainNode, e
 
 func (chain *BlockChainConsensus) getBlock(hash *core.Byte64) (*block, error) {
 	if data, err := chain.db.Get(tableKey(tableBlock, hash)); err != nil {
-		chain.logger.Error("Did not find block in DB: %s", err.Error())
+		chain.logger.Debug("Did not find block in DB: %s", err.Error())
 		return nil, err
 	} else {
 		var block *block
@@ -178,7 +178,7 @@ func (c *BlockChainConsensus) NewCandidateBlock() Block {
 
 	// add uncles to the block
 	for _, uncle := range c.findUncles(c.Tip().ParentHash(), c.Tip().Hash(), maxUncleDistance, c.Tip().Depth().Uint64()) {
-		c.logger.Debug("Adding %d distant uncle: %x, miner: %x", uncle.distance, *uncle.hash, *uncle.miner)
+//		c.logger.Debug("Adding %d distant uncle: %x, miner: %x", uncle.distance, *uncle.hash, *uncle.miner)
 		b.addUncle(uncle.hash)
 
 		// add mining reward for uncle in this block's world view
@@ -191,14 +191,14 @@ func (c *BlockChainConsensus) NewCandidateBlock() Block {
 func (c *BlockChainConsensus) findUncles(grandParent, parent *core.Byte64, remainingDistance, maxDepth uint64) []uncle {
 	uncles := make([]uncle, 0, 5)
 	if remainingDistance == 0 || *grandParent == *genesisParent {
-//		chain.logger.Debug("reached max uncle search: remainingDistance %d", remainingDistance)
+//		c.logger.Debug("findUncles: reached max uncle search: remainingDistance %d", remainingDistance)
 		return uncles
 	}
 	if node, err := c.getChainNode(grandParent); err == nil {
 		for _, childNode := range node.children() {
 			if childNode != nil && *childNode != *parent {
 				if childBlock, err := c.getBlock(childNode); err == nil {
-					c.logger.Debug("Found uncle: %x, remainingDistance: %d, depth %d", *childBlock.Hash(), remainingDistance, childBlock.Depth().Uint64())
+//					c.logger.Debug("findUncles: %x, remainingDistance: %d, depth %d", *childBlock.Hash(), remainingDistance, childBlock.Depth().Uint64())
 					uncles = append(uncles, uncle{
 							hash: childBlock.Hash(),
 							miner: childBlock.Miner(),
@@ -218,7 +218,7 @@ func (c *BlockChainConsensus) findUncles(grandParent, parent *core.Byte64, remai
 func (c *BlockChainConsensus) findNonDirectAncestors(childNode *core.Byte64, remainingDistance, maxDepth uint64) []uncle {
 	uncles := make([]uncle, 0, 5)
 	if remainingDistance == 0 {
-//		c.logger.Debug("reached max uncle search: remainingDistance %d", remainingDistance)
+//		c.logger.Debug("findNonDirectAncestors: reached max uncle search: remainingDistance %d", remainingDistance)
 		return uncles
 	}
 	
@@ -226,7 +226,7 @@ func (c *BlockChainConsensus) findNonDirectAncestors(childNode *core.Byte64, rem
 		for _, grandChild := range node.children() {
 			if grandChild != nil {
 				if grandChildBlock, err := c.getBlock(grandChild); err == nil && grandChildBlock.Depth().Uint64() <= maxDepth {
-					c.logger.Debug("Found uncle: %x, remainingDistance: %d, depth %d", *grandChildBlock.Hash(), remainingDistance, grandChildBlock.Depth().Uint64())
+//					c.logger.Debug("findNonDirectAncestors: %x, remainingDistance: %d, depth %d", *grandChildBlock.Hash(), remainingDistance, grandChildBlock.Depth().Uint64())
 					uncles = append(uncles, uncle{
 							hash: grandChildBlock.Hash(),
 							miner: grandChildBlock.Miner(),
@@ -248,44 +248,31 @@ func (c *BlockChainConsensus) findNonDirectAncestors(childNode *core.Byte64, rem
 // with serialized data for the block that can be  sent over the wire to peers,
 // or error if mining failed/aborted
 func (c *BlockChainConsensus) MineCandidateBlock(b Block, cb MiningResultHandler) {
-	// validate the block
-	c.lock.RLock()
-	defer c.lock.RUnlock()
-	if parent, err := c.validateBlock(b); err != nil {
-		cb(nil, err)
-		return
-	} else {
-		go c.mineCandidateBlock(b.(*block), parent, cb)
-	}
+	go c.mineCandidateBlock(b.(*block), cb)
 }
-func (c *BlockChainConsensus) mineCandidateBlock(child, parent *block, cb MiningResultHandler) {
-	// mine the block
-	if child.computeHash() == nil {
-		c.logger.Error("Failed to compute hash for block")
-		cb(nil, core.NewCoreError(ERR_BLOCK_UNHASHED, "hash computation failed"))
-		return
-	}
-
-//	// create serialized data of the block
-//	data, err := serializeBlock(child)
-//	if err != nil {
-//		cb(nil, err)
-//		return
-//	}
-	// add the block
+func (c *BlockChainConsensus) mineCandidateBlock(child *block, cb MiningResultHandler) {
 	c.lock.Lock()
-	c.lock.Unlock()
-	if err := c.addValidatedBlock(child, parent); err != nil {
+	defer c.lock.Unlock()
+	// validate the block
+	if parent, err := c.validateBlock(child); err != nil {
 		cb(nil, err)
-		return
+	} else {
+		// mine the block
+		if child.computeHash() == nil {
+			c.logger.Error("Failed to compute hash for block")
+			cb(nil, core.NewCoreError(ERR_BLOCK_UNHASHED, "hash computation failed"))
+			return
+		}
+		// add the block
+		if err := c.addValidatedBlock(child, parent); err != nil {
+			c.logger.Debug("%s: validation failed for mined block: %x", *c.minerId, *child.Hash())
+			cb(nil, err)
+			return
+		}
+		// return raw block, so that protocol layer can update "seen" node set with hash of the block
+		cb(child, nil)
+		c.logger.Debug("%s: Successfully mined block: %x", *c.minerId, *child.Hash())
 	}
-	// since we added to self, we also want to announce to network, regardless of whether there was some other network block
-	// added while we were mining. Consenus algorithm will take care of keeping canonical chain tip poining to the right block
-	
-//	// return serialized data for the block
-//	cb(data, nil)
-	// return raw block, so that protocol layer can update "seen" node set with hash of the block
-	cb(child, nil)
 }
 
 // query status of a transaction (its block details) in the canonical chain
@@ -310,30 +297,42 @@ func (c *BlockChainConsensus) TransactionStatus(tx *Transaction) (Block, error) 
 func (c *BlockChainConsensus) isUncleValid(child *block, uHash *core.Byte64) bool {
 	// check if uncle is known
 	if uncle, err := c.getChainNode(uHash); err != nil {
-		c.logger.Error("block with unknown uncle!!!")
+		c.logger.Error("Failed to find uncle's chain node: %s", err)
 		return false
 	} else {
 		// find common ancestor
+		distance := uint64(0)
 		var parent *chainNode
-		for parent, _ = c.getChainNode(&child.PHASH); parent != nil && parent.Depth < uncle.Depth; {
+		for parent, _ = c.getChainNode(&child.PHASH); parent != nil && parent.Depth > uncle.Depth; {
+//			c.logger.Debug("Parent Depth: %d, Uncle Depth: %d", parent.Depth, uncle.Depth)
+//			c.logger.Debug("Moving uncle up: %x --> %x", *parent.Hash, *parent.Parent)
 			parent, _ = c.getChainNode(parent.Parent)
+			distance++
 		}
-		for ; parent != nil && uncle != nil && uncle.Depth < parent.Depth; {
+		for ; parent != nil && uncle != nil && uncle.Depth > parent.Depth; {
+//			c.logger.Debug("Parent Depth: %d, Uncle Depth: %d", parent.Depth, uncle.Depth)
+//			c.logger.Debug("Moving uncle up: %x --> %x", *uncle.Hash, *uncle.Parent)
 			uncle, _ = c.getChainNode(uncle.Parent)
+			distance++
 		}
 		if parent == nil || uncle == nil {
+			c.logger.Error("failed to find common ancestor")
 			// did not find common ancestor
 			return false
 		}
 		if *parent.Hash == *uncle.Hash {
+			c.logger.Error("uncle is a direct ancestor!!!")
 			// uncle cannot be direct ancestor
 			return false
 		}
 		for parent != nil && uncle != nil && *parent.Hash != *uncle.Hash {
 			parent, _ = c.getChainNode(parent.Parent)
 			uncle, _ = c.getChainNode(uncle.Parent)
+			distance++
 		}
-		return parent != nil && uncle != nil && (child.Depth().Uint64() - parent.Depth <  maxUncleDistance)
+		c.logger.Debug("Found uncle at distance: %d", distance)
+//		return parent != nil && uncle != nil && (child.Depth().Uint64() - parent.Depth <  maxUncleDistance)
+		return parent != nil && uncle != nil && (distance <=  maxUncleDistance)
 	}
 }
 
