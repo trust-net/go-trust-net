@@ -623,7 +623,24 @@ func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([]Block
 			c.logger.Error("failed to fetch descendent block: %s", err.Error())
 			return descendents, err
 		} else {
-			c.logger.Error("adding descendent block: %x", *child.Hash())
+			// first fetch all uncles of this block
+			if (count + len(child.Uncles())) >= max {
+					c.logger.Debug("skipping block since uncles also need to be included in next batch")
+					break
+			}
+			uncles := make([]Block, 0, len(child.Uncles()))
+			for _, hash := range child.Uncles() {
+				if uncle, err := c.getBlock(&hash); err != nil {
+					c.logger.Error("failed to fetch uncle block: %s", err.Error())
+					return descendents, err
+				} else {
+					c.logger.Debug("adding uncle block: %x", *uncle.Hash())
+					uncles = append(uncles, uncle)
+					count++
+				}
+			}
+			descendents = append(descendents, uncles...)
+			c.logger.Debug("adding descendent block: %x", *child.Hash())
 			descendents = append(descendents, child)
 		}
 		// move down descendent list

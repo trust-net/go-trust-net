@@ -134,7 +134,6 @@ func TestMineCandidateBlock(t *testing.T) {
 	// mining will be executed in a background goroutine
 	log.SetLogLevel(log.NONE)
 	done := make(chan struct{})
-//	c.MineCandidateBlock(child, func(data []byte, err error) {
 	c.MineCandidateBlock(child, func(b Block, err error) {
 			defer func() {done <- struct{}{}}()
 			if err != nil {
@@ -700,10 +699,163 @@ func TestBlockChainConsensusDescendents(t *testing.T) {
 			if descendent.(*block).STATE != ancestor.(*block).STATE {
 				t.Errorf("descendent state incorrect")
 			}
-//			if _, err := c.DeserializeNetworkBlock(descendent); err != nil {
-//				t.Errorf("failed to de-serialize descendent: %s", err)
-//			}
 		}
+	}
+}
+
+func extendChainWithUncle(c *BlockChainConsensus, t *testing.T) (*block, *block) {
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+	// re assigned mined block to ancestor
+	ancestor = c.BestBlock()
+
+	// add an uncle block to blockchain
+	uncle := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	uncle.computeHash()
+	c.putBlock(uncle)
+	c.putChainNode(newChainNode(uncle))
+
+	// build a parent block to blockchain
+	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	parent.computeHash()
+	c.putBlock(parent)
+
+	// set the parent as ancestor's main list child
+	parentNode := newChainNode(parent)
+	parentNode.setMainList(true)
+	c.putChainNode(parentNode)
+	ancestorNode := newChainNode(ancestor.(*block))
+	ancestorNode.addChild(parent.Hash())
+	ancestorNode.setMainList(true)
+	c.putChainNode(ancestorNode)
+
+	// build a new block simulating parent's child and uncle's nephew
+	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	child.UNCLEs = append(child.UNCLEs, *uncle.Hash())
+	
+	// present it for mining and acceptance
+	done := make(chan struct{})
+	c.MineCandidateBlock(child, func(b Block, err error) {
+			defer func() {done <- struct{}{}}()
+			if err != nil {
+				t.Errorf("failed to mine candidate block: %s", err)
+				return
+			}
+			// canonical chain's tip should match child node
+			if *c.Tip().Hash() != *b.Hash() {
+				t.Errorf("Canonical chain tip does not match mined block")
+			}
+			// world view should also match
+			if c.state.Hash() != b.(*block).STATE {
+				t.Errorf("World state not updated after mining")
+			}
+	});
+	// wait for our callback to finish
+	<-done
+	return ancestor.(*block), uncle
+}
+
+func TestBlockChainConsensusDescendentsWithUncles(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+
+	log.SetLogLevel(log.DEBUG)
+	// add an uncle block to blockchain
+	ancestor, uncle := extendChainWithUncle(c, t)	
+	if uncle == nil {
+		t.Errorf("failed to add uncle")
+		return
+	}
+
+	uncleFound := false
+	// fetch descendents from ancestor
+	if descendents, err := c.Descendents(ancestor.Hash(), 100); err != nil {
+		t.Errorf("failed to get descendents: %s", err)
+	} else {
+		if len(descendents) != 3 {
+			t.Errorf("did not get all descendents: %d", len(descendents))
+		}
+		// validate each descendent
+		for _, descendent := range descendents {
+			if descendent.(*block).STATE != ancestor.STATE {
+				t.Errorf("descendent state incorrect")
+			}
+			uncleFound = uncleFound || (*descendent.Hash() == *uncle.Hash()) 
+		}
+	}
+	if !uncleFound {
+		t.Errorf("uncle not included in descendents")
+	}
+}
+
+
+func TestBlockChainConsensusDescendentsWithUnclesInBatch(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+
+	log.SetLogLevel(log.DEBUG)
+	// add an uncle block to blockchain
+	ancestor, uncle1 := extendChainWithUncle(c, t)	
+	_, uncle2 := extendChainWithUncle(c, t)	
+
+	uncle1Found := false
+	uncle2Found := false
+	// fetch descendents from ancestor
+	var last Block
+	if descendents, err := c.Descendents(ancestor.Hash(), 6); err != nil {
+		t.Errorf("failed to get descendents: %s", err)
+	} else {
+		if len(descendents) != 5 {
+			t.Errorf("did not get correct descendents: %d", len(descendents))
+		}
+		// validate each descendent
+		for _, descendent := range descendents {
+			uncle1Found = uncle1Found || (*descendent.Hash() == *uncle1.Hash()) 
+			uncle2Found = uncle2Found || (*descendent.Hash() == *uncle2.Hash())
+			last = descendent
+		}
+	}
+	if !uncle1Found {
+		t.Errorf("uncle 1 not included in descendents")
+	}
+	if uncle2Found {
+		t.Errorf("uncle 2 should not be included in descendents")
+	}
+	// get the 2nd batch
+	uncle1Found = false
+	uncle2Found = false
+	if descendents, err := c.Descendents(last.Hash(), 6); err != nil {
+		t.Errorf("failed to get descendents: %s", err)
+	} else {
+		if len(descendents) != 2 {
+			t.Errorf("did not get correct descendents: %d", len(descendents))
+		}
+		// validate each descendent
+		for _, descendent := range descendents {
+			uncle1Found = uncle1Found || (*descendent.Hash() == *uncle1.Hash()) 
+			uncle2Found = uncle2Found || (*descendent.Hash() == *uncle2.Hash())
+		}
+	}
+	if uncle1Found {
+		t.Errorf("uncle 1 should not be included in descendents")
+	}
+	if !uncle2Found {
+		t.Errorf("uncle 2 should be included in descendents")
 	}
 }
 
