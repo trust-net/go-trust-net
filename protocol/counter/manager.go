@@ -124,6 +124,12 @@ func (mgr *CountrProtocolManager) Shutdown() {
 	mgr.logger.Debug("shutting down counter protocol manager")
 }
 
+func (mgr *CountrProtocolManager) Tip() (uint64, uint64, *core.Byte64) {
+	bb := mgr.engine.BestBlock()
+	mgr.logger.Debug("Current tip of the blockchain: Depth %d, Weight %d\n%x", bb.Depth().Uint64(), bb.Weight().Uint64(), *bb.Hash())
+	return bb.Depth().Uint64(), bb.Weight().Uint64(), bb.Hash()
+}
+
 func makeTransactionPayload(name string, opCode *core.Byte8) []byte {
 	data := make([]byte, 0, len(name)+8)
 	data = append(data, opCode.Bytes()...)

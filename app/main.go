@@ -164,6 +164,10 @@ func CLI(c chan int, srv *p2p.Server) {
 						for i, peer := range srv.PeersInfo() {
 							fmt.Printf("%02d : \"% 10s\" : %s@%s\n", i+1, peer.Name, peer.ID, peer.Network.RemoteAddress)
 						}
+					case "tip":
+						depth, weight, hash := counterMgr.Tip()
+						fmt.Printf("Depth: %d, Weight: %d\n%x\n", depth, weight, *hash)
+
 					case "enode":
 						fmt.Printf("%s", srv.NodeInfo().Enode)
 					case "info":
