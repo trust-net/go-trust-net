@@ -5,7 +5,6 @@ import (
     "time"
     "fmt"
     "math/rand"
-	"sync"
 	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/db"
 	"github.com/trust-net/go-trust-net/log"
@@ -479,16 +478,58 @@ func TestBlockChainConsensusUncleWeight(t *testing.T) {
 	if err := addChain(chain2, []Block{candidate3}); err != nil {
 		t.Errorf("failed to add network block: %s", err)
 	}
-	// now, next candidate block on chain1 should have candidate2 (first recieved) as parent,
+	// find out, based on numeric value, which block won (since both have same weight)
+	var parent Block
+	var uncle Block
+	if computeNum(candidate2.Hash()) < computeNum(candidate3.Hash()) {
+		parent = candidate2
+		uncle = candidate3
+	} else {
+		parent = candidate3
+		uncle = candidate2
+	}
+	// now, next candidate block on chain1 should have the winning block as parent,
 	// and candidate3 (next recieved) as uncle
 	log.SetLogLevel(log.NONE)
-	candidate1 = chain1.NewCandidateBlock()
-	if *candidate1.ParentHash() != *candidate2.Hash() {
+	child := chain1.NewCandidateBlock()
+	if *child.ParentHash() != *parent.Hash() {
 		t.Errorf("incorrect parent hash")
 	}
-	if len(candidate1.Uncles()) != 1 || candidate1.Uncles()[0] != *candidate3.Hash() {
-		t.Errorf("incorrect uncles: %d, %x", len(candidate1.Uncles()),  candidate1.Uncles()[0])
+	if len(child.Uncles()) != 1 || child.Uncles()[0] != *uncle.Hash() {
+		t.Errorf("incorrect uncles: %d, %x", len(child.Uncles()),  child.Uncles()[0])
 	}	
+}
+
+func TestBlockChainConsensusBlockComparison(t *testing.T) {
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+	// create two competing blocks
+	block1 := c.NewCandidateBlock()
+	block2 := c.NewCandidateBlock()
+	// submit both blocks for mining
+	addBlock(block1, c)
+	addBlock(block2, c)
+	td1, td2 := uint64(0), uint64(0)
+	for _, b := range block1.Hash().Bytes() {
+		td1 += uint64(b)
+	}
+	for _, b := range block2.Hash().Bytes() {
+		td2 += uint64(b)
+	}
+	if (td1 < td2 && *c.tip.Hash() != *block1.Hash()) || (td2 < td1 && *c.tip.Hash() != *block2.Hash()) {
+		t.Errorf("incorrect block selected!!!\nBlock1: %d : %x\nBlock2: %d : %x", td1, *block1.Hash(), td2, *block2.Hash())
+	} else if td1 == td2 {
+		t.Errorf("block selection failed with equal numeric value!")	
+	}
 }
 
 func TestBlockChainConsensus(t *testing.T) {
@@ -505,12 +546,9 @@ func TestBlockChainConsensus(t *testing.T) {
 
 	// define an application for this consensus platform
 	counter := 0
-	var lock sync.RWMutex
 	nodeFunc := func(myChain *BlockChainConsensus, myNode *core.Byte64) {
-		// wait random time and grab lock for one instance of application
+		// wait random time
 		time.Sleep(time.Millisecond * time.Duration(rand.Intn(200)))
-		lock.Lock()
-		defer lock.Unlock()
 
 		// create a new candidate block
 		candidate := myChain.NewCandidateBlock()
