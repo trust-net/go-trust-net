@@ -481,7 +481,7 @@ func TestBlockChainConsensusUncleWeight(t *testing.T) {
 	// find out, based on numeric value, which block won (since both have same weight)
 	var parent Block
 	var uncle Block
-	if computeNum(candidate2.Hash()) < computeNum(candidate3.Hash()) {
+	if candidate2.Numeric() < candidate3.Numeric() {
 		parent = candidate2
 		uncle = candidate3
 	} else {

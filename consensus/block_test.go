@@ -158,6 +158,34 @@ func TestComputeHash(t *testing.T) {
 	}
 }
 
+func TestNumericInvalidHash(t *testing.T) {
+	weight, depth := uint64(23), uint64(20)
+	dbPre, _ := db.NewDatabaseInMem()
+	ws := trie.NewMptWorldState(dbPre)
+	ws.Update([]byte("key"), []byte("value"))
+	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	num := uint64(0)
+	if orig.Numeric() != num-1 {
+		t.Errorf("Incorrect numeric value for unhashed block: %d", orig.Numeric())
+	}
+}
+
+func TestNumericValidHash(t *testing.T) {
+	weight, depth := uint64(23), uint64(20)
+	dbPre, _ := db.NewDatabaseInMem()
+	ws := trie.NewMptWorldState(dbPre)
+	ws.Update([]byte("key"), []byte("value"))
+	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	orig.computeHash()
+	num := uint64(0)
+	for _, b := range orig.hash.Bytes() {
+		num += uint64(b)
+	}
+	if orig.Numeric() != num {
+		t.Errorf("Incorrect numeric value for hashed block: %d", orig.Numeric())
+	}
+}
+
 func TestSerializeDeserialize(t *testing.T) {
 	weight, depth := uint64(23), uint64(20)
 	dbPre, _ := db.NewDatabaseInMem()
@@ -288,6 +316,8 @@ func (b *invalidType) AddTransaction(tx *Transaction) error {return nil}
 func (b *invalidType) Hash() *core.Byte64 {return nil}
 
 func (b *invalidType) Spec() BlockSpec {return BlockSpec{}}
+
+func (b *invalidType) Numeric() uint64 {return 0}
 
 func TestSerializeInvalid(t *testing.T) {
 	if _, err := serializeBlock(nil); err == nil {

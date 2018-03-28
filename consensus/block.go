@@ -24,6 +24,8 @@ type Block interface {
 	AddTransaction(tx *Transaction) error
 	Hash() *core.Byte64
 	Spec() BlockSpec
+	// a deterministic numeric value for the block for ordering of competing blocks 
+	Numeric() uint64
 }
 
 // these are the fields that actually go over the wire
@@ -241,6 +243,19 @@ func (b *block) Spec() BlockSpec {
 		spec.UNCLEs[i] = uncle
 	}
 	return spec
+}
+
+// a deterministic numeric value for the block for ordering of competing blocks 
+func (b *block) Numeric() uint64 {
+	num := uint64(0)
+	if b.hash == nil {
+		num -= 1
+		return num
+	}
+	for _, b := range b.hash.Bytes() {
+		num += uint64(b)
+	}
+	return num
 }
 
 // private method, can only be invoked by DAG implementation, so can be initiaized correctly
