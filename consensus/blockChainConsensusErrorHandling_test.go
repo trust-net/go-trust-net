@@ -295,6 +295,7 @@ func TestErrorDeserializeNetworkBlockIncorrectUncle(t *testing.T) {
 
 func TestErrorAcceptNetworkBlockIncorrectState(t *testing.T) {
 	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	if err != nil || c == nil {
@@ -304,13 +305,21 @@ func TestErrorAcceptNetworkBlockIncorrectState(t *testing.T) {
 	// build a new block to simulate current tip's child
 	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
 	child.computeHash()
-	data,_ := serializeBlock(child)
 	var b Block
-	if b, err = c.DeserializeNetworkBlock(data); err != nil {
-		t.Errorf("failed to deserialize block: %s", err)
+//	data,_ := serializeBlock(child)
+//	if b, err = c.DeserializeNetworkBlock(data); err != nil {
+//		t.Errorf("failed to deserialize block: %s", err)
+//		return
+//	}
+	if b, err = c.DecodeNetworkBlockSpec(child.Spec()); err != nil {
+		t.Errorf("failed to decode block spec: %s", err)
 		return
 	}
-	// change block's STATE
+	if b.(*block).STATE != child.worldState.Hash() {
+		t.Errorf("decoded block STATE not correct")
+	}
+	// update a value in world state different from original block (to simulate rougue app)
+	b.Update([]byte("key"), []byte("value"))
 	b.(*block).STATE = *core.BytesToByte64([]byte("some random state"))
 	if err = c.AcceptNetworkBlock(b); err == nil || err.(*core.CoreError).Code() != ERR_STATE_INCORRECT {
 		t.Errorf("failed to detect incorrect state on network block")

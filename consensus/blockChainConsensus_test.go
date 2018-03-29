@@ -806,7 +806,6 @@ func TestBlockChainConsensusDescendentsWithUncles(t *testing.T) {
 		return
 	}
 
-	log.SetLogLevel(log.DEBUG)
 	// add an uncle block to blockchain
 	ancestor, uncle := extendChainWithUncle(c, t)	
 	if uncle == nil {
@@ -846,7 +845,6 @@ func TestBlockChainConsensusDescendentsWithUnclesInBatch(t *testing.T) {
 		return
 	}
 
-	log.SetLogLevel(log.DEBUG)
 	// add an uncle block to blockchain
 	ancestor, uncle1 := extendChainWithUncle(c, t)	
 	_, uncle2 := extendChainWithUncle(c, t)	

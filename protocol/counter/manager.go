@@ -2,6 +2,7 @@ package counter
 
 import (
 //	"math/big"
+//    "sync"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/core"
 //	"github.com/trust-net/go-trust-net/common"
@@ -49,12 +50,17 @@ type CountrProtocolManager struct {
 //	miner *core.SimpleNodeInfo
 	miner *core.Byte64
 	stateDb db.Database
+	isInShutdown bool
+//	lock sync.RWMutex
+//	nodes map[*protocol.Node]bool
 }
 
 // create a new instance of countr protocol manager
 func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 	mgr := CountrProtocolManager{
 		miner: core.BytesToByte64([]byte(miner)),
+		isInShutdown: false,
+//		nodes: make(map[*protocol.Node]bool),
 //		genesis: core.NewSimpleBlock(core.BytesToByte64(nil), 0, 0, genesisTimeStamp, core.NewSimpleNodeInfo("")),
 	}
 	mgr.logger = log.NewLogger(mgr)
@@ -120,6 +126,13 @@ func (mgr *CountrProtocolManager) Shutdown() {
 //	if err := mgr.chain.Shutdown(); err != nil {
 //		mgr.logger.Error("Failed to cleanly shutdown chain DB: %s", err.Error())
 //	}
+//    // diconnect with all peers
+//	mgr.lock.Lock()
+//    for node,_ := range mgr.nodes {
+//	    	node.Peer().Disconnect(p2p.DiscQuitting)
+//    }
+//	mgr.lock.Unlock()
+	mgr.isInShutdown = true
 	mgr.stateDb.Close()
 	mgr.logger.Debug("shutting down counter protocol manager")
 }
@@ -144,27 +157,28 @@ func getTransactionFromPayload(data []byte) (string, *core.Byte8) {
 	return string(data[8:]), core.BytesToByte8(data[:8])	
 } 
 
-func (mgr *CountrProtocolManager) delta(name string, opCode *core.Byte8) bool {
+func (mgr *CountrProtocolManager) delta(name string, opCode *core.Byte8, delta int) bool {
 	// create new block and add to my blockchain
 	block := mgr.engine.NewCandidateBlock()
-	current, err := mgr.countr(name, block)
-	if err != nil {
-		mgr.logger.Error("Failed to get current countr value: %s", err)
-		// using default value
-//		return false
-	}
-	result := false
-	switch *opCode {
-		case *OpIncrement:
-			result = block.Update([]byte(name), core.Uint64ToByte8(current+1).Bytes())
-		case *OpDecrement:
-			result = block.Update([]byte(name), core.Uint64ToByte8(current-1).Bytes())
-	}
-	if result {
-		result = block.AddTransaction(consensus.NewTransaction(makeTransactionPayload(name, opCode), mgr.miner)) == nil
+//	current, _ := mgr.countr(name, block)
+//	if err != nil {
+//		mgr.logger.Error("Failed to get current countr value: %s", err)
+//		// using default value
+////		return false
+//	}
+	for ;delta > 0; delta-- {
+		current, _ := mgr.countr(name, block)
+		switch *opCode {
+			case *OpIncrement:
+				block.Update([]byte(name), core.Uint64ToByte8(current+1).Bytes())
+			case *OpDecrement:
+				block.Update([]byte(name), core.Uint64ToByte8(current-1).Bytes())
+		}
+		block.AddTransaction(consensus.NewTransaction(makeTransactionPayload(name, opCode), mgr.miner))
 	}
 	// submit block for mining
 	done := make(chan struct{})
+	result := false
 	mgr.engine.MineCandidateBlock(block, func(block consensus.Block, err error) {
 			result = err == nil
 			defer func() {
@@ -192,14 +206,15 @@ func (mgr *CountrProtocolManager) Increment(name string, delta int) (uint64) {
 //		return nil, err
 //	} else {
 //		mgr.logger.Debug("Incrementing network counter from '%d' --> '%d'", countr, countr+uint64(delta))
-		for delta > 0 {
-			if  mgr.delta(name, OpIncrement) {
-				delta--
-			} else {
-				return 0
-			}
-		}
-//	}
+//		for delta > 0 {
+//			if  mgr.delta(name, OpIncrement, delta) {
+//				delta--
+//			} else {
+//				return 0
+//			}
+//		}
+////	}
+	mgr.delta(name, OpIncrement, delta)
 	return mgr.Countr(countrName)
 }
 
@@ -208,14 +223,15 @@ func (mgr *CountrProtocolManager) Decrement(name string, delta int) (uint64) {
 //		return nil, err
 //	} else {
 //		mgr.logger.Debug("Incrementing network counter from '%d' --> '%d'", countr, countr-uint64(delta))
-		for delta > 0 {
-			if  mgr.delta(name, OpDecrement) {
-				delta--
-			} else {
-				return 0
-			}
-		}
-//	}
+//		for delta > 0 {
+//			if  mgr.delta(name, OpDecrement, delta) {
+//				delta--
+//			} else {
+//				return 0
+//			}
+//		}
+////	}
+	mgr.delta(name, OpDecrement, delta)
 	return mgr.Countr(countrName)
 }
 
@@ -246,7 +262,7 @@ func (mgr *CountrProtocolManager) syncNode(node *protocol.Node) error {
 	// lets assume our tip is the last known to us block on main blockchain
 	node.LastHash = best.Hash()
 	// wait until sync completes, or an error
-	for node.Status().TotalWeight.Uint64() > best.Weight().Uint64() {
+	for !mgr.isInShutdown && node.Status().TotalWeight.Uint64() > best.Weight().Uint64() {
 		mgr.logger.Debug("Requesting sync: peer weight '%d' > our weight '%d'",
 			node.Status().TotalWeight.Uint64(), best.Weight().Uint64())
 		// request sync starting from the genesis block (in case there was a fork with better chain)
@@ -273,7 +289,9 @@ func (mgr *CountrProtocolManager) syncNode(node *protocol.Node) error {
 //				mgr.logger.Debug("Syncing with peer '%s' done", node.ID())
 				return nil
 		}
-		best = mgr.engine.BestBlock()
+		if !mgr.isInShutdown {
+			best = mgr.engine.BestBlock()
+		}
 	}
 	mgr.logger.Debug("Syncing with peer '%s' done", node.ID())
 	return nil
@@ -400,12 +418,12 @@ func (mgr *CountrProtocolManager) processBlock(block consensus.Block, from *prot
 			mgr.logger.Error("Invalid transaction: %s", tx)
 			return core.NewCoreError(consensus.ERR_INVALID_TX, "transaction error")
 		}
-		current, err := mgr.countr(name, block)
-		if err != nil {
-			mgr.logger.Error("Failed to get current countr value: %s", err)
-			// using default value
-	//		return false
-		}
+		current, _ := mgr.countr(name, block)
+//		if err != nil {
+//			mgr.logger.Error("Failed to get current countr value: %s", err)
+//			// using default value
+//	//		return false
+//		}
 		switch *opCode {
 			case *OpIncrement:
 				result = block.Update([]byte(name), core.Uint64ToByte8(current+1).Bytes())
@@ -421,7 +439,6 @@ func (mgr *CountrProtocolManager) processBlock(block consensus.Block, from *prot
 	}
 	// submit block for acceptance
 	if err := mgr.engine.AcceptNetworkBlock(block); err != nil {
-		mgr.logger.Error("%s: Could not accept network block: %s", from.ID(), err)
 		return err
 	} else {
 		// mark the sender has having seen this message
@@ -443,6 +460,7 @@ func (mgr *CountrProtocolManager) handleNewBlockMsg(msg p2p.Msg, from *protocol.
 	} else {
 		// process the block
 		if err := mgr.processBlock(block, from); err != nil && err.(*core.CoreError).Code() != consensus.ERR_DUPLICATE_BLOCK {
+			mgr.logger.Error("%s: Could not accept new block: %s", from.ID(), err)
 			// abort sync
 			from.GetBlockHashesChan <- protocol.CHAN_ERROR
 			return err
@@ -531,6 +549,7 @@ func (mgr *CountrProtocolManager) handleGetBlocksResponseMsg(msg p2p.Msg, from *
 			return err
 		}
 		if err := mgr.processBlock(block, from); err != nil && err.(*core.CoreError).Code() != consensus.ERR_DUPLICATE_BLOCK {
+			mgr.logger.Error("%s: Could not accept sync block: %s", from.ID(), err)
 			// abort sync
 			from.GetBlockHashesChan <- protocol.CHAN_ERROR
 			return err

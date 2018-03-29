@@ -131,6 +131,7 @@ func (chain *BlockChainConsensus) getBlock(hash *core.Byte64) (*block, error) {
 			chain.logger.Error("failed to decode data from DB: %s", err.Error())
 			return nil, err
 		}
+		block.hash = core.BytesToByte64(hash.Bytes())
 //		chain.logger.Debug("fetched block from DB: %x", *hash)
 		return block, nil
 	}
@@ -432,6 +433,8 @@ func (c *BlockChainConsensus) DecodeNetworkBlockSpec(spec BlockSpec) (Block, err
 			UNCLEs: make([]core.Byte64, len(spec.UNCLEs)),
 			NONCE: spec.NONCE,
 		},
+		variables: make(map[string][]byte),
+		transactions: make(map[core.Byte64]bool),
 	}
 	for i,tx := range spec.TXs {
 		newBlock.TXs[i] = tx
@@ -446,7 +449,6 @@ func (c *BlockChainConsensus) DecodeNetworkBlockSpec(spec BlockSpec) (Block, err
 func (c *BlockChainConsensus) processNetworkBlock(b *block) (Block, error) {
 	// set the network flag on block
 	b.isNetworkBlock = true
-	b.computeHash()
 
 	// validate block
 	var parent *block
@@ -460,7 +462,7 @@ func (c *BlockChainConsensus) processNetworkBlock(b *block) (Block, error) {
 		c.logger.Error("failed to initialize network block's world state: %s", err.Error())
 		return nil, core.NewCoreError(ERR_STATE_INCORRECT, "cannot initialize state")
 	}
-	b.worldState = state
+	b.worldState = state	
 	return b, nil
 }
 
@@ -476,6 +478,9 @@ func (c *BlockChainConsensus) AcceptNetworkBlock(b Block) error {
 	if parent, err = c.validateBlock(b); err != nil {
 		return err
 	}
+	// run PoW on the network block
+	b.(*block).computeHash()
+
 	// validate that computed state by application matches deserialized state of the block
 	if b.(*block).worldState.Hash() != b.(*block).STATE {
 		c.logger.Error("computed world state of network block incorrect")
@@ -489,7 +494,7 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 	// verify that this is not a duplicate block
 	var err error
 	if _, err = c.getChainNode(child.Hash()); err == nil {
-		c.logger.Error("block already exists: %x", *child.Hash())
+		c.logger.Debug("block already exists: %x", *child.Hash())
 		return core.NewCoreError(ERR_DUPLICATE_BLOCK, "duplicate block")
 	}
 	// add the new child node into our data store

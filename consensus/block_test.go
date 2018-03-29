@@ -208,6 +208,7 @@ func TestSerializeDeserialize(t *testing.T) {
 			return
 		}
 	}
+	copy.(*block).computeHash()
 	if copy.(*block).STATE != orig.STATE {
 		t.Errorf("State incorrect after deserialization: Expected '%d', Found '%d'", orig.STATE, copy.(*block).STATE)
 	}
@@ -279,6 +280,8 @@ func TestSerializeDeserializeWorldStateComparison(t *testing.T) {
 		t.Errorf("failed to add transaction to deserialized block: %s", err.Error())
 		return
 	}
+	// update world state
+	copy.(*block).persistState()
 	// now compare world state fingerprints
 	if copy.(*block).worldState.Hash() != orig.STATE {
 		t.Errorf("World state fingerprint does not match: Expected '%x', Found '%x'", orig.STATE, copy.(*block).worldState.Hash())
@@ -402,10 +405,12 @@ func TestTransactionAddDuplicateTransaction(t *testing.T) {
 	weight, depth := uint64(23), uint64(20)
 	b := newBlock(previous, weight, depth, now, testMiner, ws)
 	tx := testTransaction("test transaction")
-	// populate DB with transaction
-	ws.RegisterTransaction(tx.Id(), core.BytesToByte64([]byte("some random block id")))
-	// now attempt to add this transaction to the block
-	if err := b.AddTransaction(tx); err == nil {
+	// add transaction
+	b.AddTransaction(tx)
+//	// populate DB with transaction
+//	ws.RegisterTransaction(tx.Id(), core.BytesToByte64([]byte("some random block id")))
+	// now attempt to add this transaction again to the block
+	if err := b.AddTransaction(tx); err == nil || err.(*core.CoreError).Code() != ERR_DUPLICATE_TX {
 		t.Errorf("failed to detect pre-existing transaction")
 	}
 }
@@ -426,6 +431,42 @@ func TestUncleAdd(t *testing.T) {
 	}
 }
 
+func TestPersistState(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	ws := trie.NewMptWorldState(db)
+	now := uint64(time.Now().UnixNano())
+	weight, depth := uint64(23), uint64(20)
+	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	// make some updates
+	b.Update([]byte("key1"), []byte("value1"))
+	ws.Update([]byte("key2"), []byte("value2"))
+	b.Delete([]byte("key2"))
+	tx := testTransaction("transaction 1")
+	b.AddTransaction(tx)
+	// these should not yet show up in world state
+	if _, err := b.worldState.Lookup([]byte("key1")); err == nil {
+		t.Errorf("unexpected update in world state before compute hash")
+	}
+	if _, err := b.worldState.Lookup([]byte("key2")); err != nil {
+		t.Errorf("did not find deleted key in world state before compute hash")
+	}
+	if _, err := b.worldState.HasTransaction(tx.Id()); err == nil {
+		t.Errorf("did not expect transaction in world state before compute hash")
+	}
+	// compute hash
+	b.computeHash()
+	if _, err := b.worldState.Lookup([]byte("key1")); err != nil {
+		t.Errorf("did not find update in world state after compute hash")
+	}
+	if _, err := b.worldState.Lookup([]byte("key2")); err == nil {
+		t.Errorf("found deleted key in world state after compute hash")
+	}	
+	if _, err := b.worldState.HasTransaction(tx.Id()); err != nil {
+		t.Errorf("did not find transaction in world state after compute hash")
+	}
+}
 
 func TestClone(t *testing.T) {
 	log.SetLogLevel(log.NONE)
@@ -439,6 +480,7 @@ func TestClone(t *testing.T) {
 	b.addUncle(testUncle)
 	b.Update([]byte("key"), []byte("value"))
 	b.AddTransaction(testTransaction("transaction 1"))
+	b.computeHash()
 	state := trie.NewMptWorldState(db)
 	state.Rebase(b.worldState.Hash())
 	
