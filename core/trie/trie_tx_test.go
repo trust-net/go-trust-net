@@ -92,9 +92,13 @@ func testTxWorldStateCleanupAfterRebalance(t *testing.T, ws WorldState) {
 		t.Errorf("Transaction's block ID incorrect:\nExpected %x\nFound %x", *blockId_2, *fetchedId)
 	}
 
-	// verify that second transaction is not available after rebalance
-	if _, err := ws.HasTransaction(txId_2); err == nil {
-		t.Errorf("did not expect 2nd transaction after rebalance")
+//	// verify that second transaction is not available after rebalance
+//	if _, err := ws.HasTransaction(txId_2); err == nil {
+//		t.Errorf("did not expect 2nd transaction after rebalance")
+//	}
+	// verify that second transaction is still available after rebalance, with old block hash
+	if hash, err := ws.HasTransaction(txId_2); err != nil || *hash != *blockId_1 {
+		t.Errorf("did not find 2nd transaction with original block after rebalance")
 	}
 	// verify that old transaction trie is still in the DB after rebalance
 	if _, found := ws.(*MptWorldState).getNode(tableKey(tableTransactionRootByWorldState, &staleHash)); !found {

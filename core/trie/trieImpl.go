@@ -25,6 +25,7 @@ type node struct {
 
 var tableTransactionRootByWorldState = []byte("TransactionRootByWorldState-")
 var tableTransactionNode = []byte("MptTransactionNode-")
+var tableTransactionFlatKV = []byte("MptTransactionFlatKV-")
 var tableMptWorldStateNode = []byte("MptWorldStateNode-")
 func tableKey(prefix []byte, key *core.Byte64) []byte {
 	return append(prefix, key.Bytes()...)
@@ -144,6 +145,20 @@ func (t *MptWorldState) HasTransaction(txId *core.Byte64) (*core.Byte64, error) 
 	// get lock
 	t.lock.RLock()
 	defer t.lock.RUnlock()
+//	return t.hasTransactionInTrie(txId)
+	return t.hasTransactionInFlatKV(txId)
+}
+
+func (t *MptWorldState) hasTransactionInFlatKV(txId *core.Byte64) (*core.Byte64, error) {
+	if data, err := t.db.Get(tableKey(tableTransactionFlatKV, txId)); err != nil {
+		t.logger.Debug("Did not find transaction in DB: %s", err.Error())
+		return nil, err
+	} else {
+		return core.BytesToByte64(data), nil
+	}
+}
+
+func (t *MptWorldState) hasTransactionInTrie(txId *core.Byte64) (*core.Byte64, error) {
 	// convert key into hexadecimal nibbles
 	keyHex := makeHex(txId.Bytes())
 	// lookup transaction
@@ -158,6 +173,15 @@ func (t *MptWorldState) RegisterTransaction(txId, blockId *core.Byte64) error {
 	// get lock
 	t.lock.Lock()
 	defer t.lock.Unlock()
+//	return t.registerTransactionToTrie(txId, blockId)
+	return t.registerTransactionToFlatKV(txId, blockId)
+}
+
+func (t *MptWorldState) registerTransactionToFlatKV(txId, blockId *core.Byte64) error {
+	return t.db.Put(tableKey(tableTransactionFlatKV, txId), blockId.Bytes())
+}
+
+func (t *MptWorldState) registerTransactionToTrie(txId, blockId *core.Byte64) error {
 	// convert key into hexadecimal nibbles
 	keyHex := makeHex(txId.Bytes())
 	// first get transaction trie root for current world view
