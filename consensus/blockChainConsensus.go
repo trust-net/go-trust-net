@@ -280,25 +280,31 @@ func (c *BlockChainConsensus) mineCandidateBlock(child *block, cb MiningResultHa
 func (c *BlockChainConsensus) TransactionStatus(tx *Transaction) (Block, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
+//	return c.transactionStatus(tx)
+	block,_, err := c.transactionStatus(tx)
+	return block, err
+}
+
+func (c *BlockChainConsensus) transactionStatus(tx *Transaction) (Block, *chainNode, error) {
 	// lookup transaction in the current canonical chain
 	if hash, err := c.state.HasTransaction(tx.Id()); err != nil {
-		c.logger.Debug("Transaction does not exists: %x", tx.Id())
-		return nil, core.NewCoreError(ERR_TX_NOT_FOUND, "transaction not found")
+		c.logger.Debug("Transaction does not exists: %x", *tx.Id())
+		return nil, nil, core.NewCoreError(ERR_TX_NOT_FOUND, "transaction not found")
 	} else 
 	// verify if the block is on canonical chain
 	if node, err := c.getChainNode(hash); err != nil {
 		c.logger.Error("Failed to get chain node for transaction: %s", err)
-		return nil, core.NewCoreError(ERR_DB_CORRUPTED, "error reading transaction's chain node")
+		return nil, nil, core.NewCoreError(ERR_DB_CORRUPTED, "error reading transaction's chain node")
 	} else if !node.isMainList() {
-		c.logger.Debug("Transaction not on canonical chain: %x", tx.Id())
-		return nil, core.NewCoreError(ERR_TX_NOT_FOUND, "transaction not found")
+		c.logger.Debug("Transaction not on canonical chain: %x", *tx.Id())
+		return nil, node, core.NewCoreError(ERR_TX_NOT_FOUND, "transaction not found")
 	} else
 	// find the block that finalized the transaction
 	if block, err := c.getBlock(hash); err != nil {
 		c.logger.Error("Failed to get block for transaction: %s", err)
-		return nil, core.NewCoreError(ERR_DB_CORRUPTED, "error reading transaction's block")
+		return nil, node, core.NewCoreError(ERR_DB_CORRUPTED, "error reading transaction's block")
 	} else {
-		return block, nil
+		return block, node, nil
 	}
 }
 
@@ -504,6 +510,17 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 	if _, err = c.getChainNode(child.Hash()); err == nil {
 		c.logger.Debug("block already exists: %x", *child.Hash())
 		return core.NewCoreError(ERR_DUPLICATE_BLOCK, "duplicate block")
+	}
+	// verify that block does not have duplicate transactions
+	for _, tx := range child.Transactions() {
+		c.logger.Debug("Checking pre-existing transaction: %x", *tx.Id())
+		if b, n, _ := c.transactionStatus(&tx);  b != nil && n != nil &&
+			(n.isMainList() ||
+				(b.Weight().Uint64() > child.Weight().Uint64() ||
+					(b.Weight().Uint64() == child.Weight().Uint64() && b.Numeric() < child.Numeric()))) {
+			c.logger.Debug("Transaction already exists with block: %x", *b.Hash())
+			return core.NewCoreError(ERR_DUPLICATE_TX, "duplicate transaction")
+		} 
 	}
 	// add the new child node into our data store
 	childNode := newChainNode(child)

@@ -264,6 +264,32 @@ func TestTransactionStatusNotCanonicalChain(t *testing.T) {
 	}
 }
 
+func TestDuplicateTransactionCheckInMining(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, _ := NewBlockChainConsensus(genesisTime, testNode, db)
+
+	// create a candidate block
+	block1 := c.NewCandidateBlock()
+	// add a transaction to the block
+	tx := testTransaction("transaction 1")
+	block1.AddTransaction(tx)
+	// add block to the chain
+	addBlock(block1, c)
+
+	// create another candidate block
+	block2 := c.NewCandidateBlock()
+	// add same transaction (duplicate) to the block
+	block2.AddTransaction(tx)
+	// add block to the chain
+	if err := addBlock(block2, c); err == nil {
+		t.Errorf("failed to detect duplicate transaction")
+	} else if err.(*core.CoreError).Code() != ERR_DUPLICATE_TX {
+		t.Errorf("Incorrect error for duplicate transaction: %s", err)
+	}
+}
+
 func TestTransactionStatusAfterRebalance(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
@@ -286,21 +312,6 @@ func TestTransactionStatusAfterRebalance(t *testing.T) {
 	c.putChainNode(uncleNode)
 	uncle.registerTransactions()
 
-	// add a parent block to blockchain
-	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
-	parent.computeHash()
-	c.putBlock(parent)
-	parent.registerTransactions()
-
-	// set the parent as ancestor's main list child
-	parentNode := newChainNode(parent)
-	parentNode.setMainList(true)
-	c.putChainNode(parentNode)
-	ancestorNode := newChainNode(ancestor.(*block))
-	ancestorNode.addChild(parent.Hash())
-	ancestorNode.setMainList(true)
-	c.putChainNode(ancestorNode)
-
 	// query for transaction, it should be registered with uncle block
 	var b Block
 	if b,err = c.TransactionStatus(tx); err != nil {
@@ -315,13 +326,33 @@ func TestTransactionStatusAfterRebalance(t *testing.T) {
 		t.Errorf("transaction has incorrect block")
 	}
 
+	// add a parent block to blockchain
+	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	parent.computeHash()
+	c.putBlock(parent)
+	parent.registerTransactions()
+
+	// set the parent as ancestor's main list child
+	parentNode := newChainNode(parent)
+	parentNode.setMainList(true)
+	c.putChainNode(parentNode)
+	uncleNode.setMainList(false)
+	c.putChainNode(uncleNode)
+	ancestorNode := newChainNode(ancestor.(*block))
+	ancestorNode.addChild(parent.Hash())
+	ancestorNode.setMainList(true)
+	c.putChainNode(ancestorNode)
+
 	// build a new block simulating parent's child and uncle's nephew
 	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
 	child.UNCLEs = append(child.UNCLEs, *uncle.Hash())
 	// add the same transaction to the new child block
 	child.AddTransaction(tx)
 	// add the block
-	addBlock(child, c)
+	if err := addBlock(child, c); err != nil {
+		t.Errorf("failed to add child block with transaction: %s", err)
+		return
+	}
 
 	// query for transaction, now it should be registered with new child block
 	if b,err = c.TransactionStatus(tx); err != nil {
@@ -658,6 +689,10 @@ func TestBlockChainConsensus(t *testing.T) {
 
 		// create a new candidate block
 		candidate := myChain.NewCandidateBlock()
+		// add a transaction every 7th count
+		if (counter+1) % 7 == 0 {
+			candidate.AddTransaction(NewTransaction([]byte("some payload"), myNode))
+		}
 
 		// create a mining callback handler for this candidate block
 		done := make(chan struct{})
