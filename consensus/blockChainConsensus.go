@@ -635,12 +635,15 @@ func (c *BlockChainConsensus) BestBlock() Block {
 
 // the ancestor at max distance from specified child
 func (c *BlockChainConsensus) Ancestor(child *core.Byte64, max int) (Block, error) {
+	if *child == *c.genesisNode.hash() {
+		return nil, 	core.NewCoreError(ERR_INVALID_ARG, "no ancestor for genesis")
+	}
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	var lastBlock = Block(nil)
 	var node *chainNode
 	var err error
-	for node, err = c.getChainNode(child); err == nil && *node.hash() != *c.genesisNode.hash() && max > 0; {
+	for node, err = c.getChainNode(child); err == nil && node.depth() > 0 && max > 0; {
 		if lastBlock, err = c.getBlock(node.parent()); err == nil {
 			node, err = c.getChainNode(node.parent())
 		}
