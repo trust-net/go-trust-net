@@ -633,6 +633,22 @@ func (c *BlockChainConsensus) BestBlock() Block {
 	return c.tip.clone(state)
 }
 
+// the ancestor at max distance from specified child
+func (c *BlockChainConsensus) Ancestor(child *core.Byte64, max int) (Block, error) {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	var lastBlock = Block(nil)
+	var node *chainNode
+	var err error
+	for node, err = c.getChainNode(child); err == nil && *node.hash() != *c.genesisNode.hash() && max > 0; {
+		if lastBlock, err = c.getBlock(node.parent()); err == nil {
+			node, err = c.getChainNode(node.parent())
+		}
+		max--
+	}
+	return lastBlock, err
+}
+
 // ordered list of serialized descendents from specific parent, on the current canonical chain
 //func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([][]byte, error) {
 func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([]Block, error) {

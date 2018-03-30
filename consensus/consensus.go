@@ -42,7 +42,8 @@ type Consensus interface {
     Genesis() *core.Byte64
     // a copy of block with specified hash, or error if not found
     Block(hash *core.Byte64) (Block, error)
-    // ordered list of serialized descendents from specific parent, on the current canonical chain
-//    Descendents(parent *core.Byte64, max int) ([][]byte, error)
+    // ordered list of descendents from specific parent, on the current canonical chain
     Descendents(parent *core.Byte64, max int) ([]Block, error)
+    // the ancestor at max distance from specified child
+    Ancestor(child *core.Byte64, max int) (Block, error)
 }

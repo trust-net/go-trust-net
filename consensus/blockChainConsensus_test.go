@@ -1103,3 +1103,92 @@ func TestBlockChainConsensusDescendentsMaxBlocksSystem(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockChainConsensusAncestorMaxBeforeGenesis(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(10, ancestor.(*block), c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// fetch ancestor from current tip
+	if block, err := c.Ancestor(c.tip.Hash(), 10); err != nil {
+		t.Errorf("failed to get ancestor: %s", err)
+	} else {
+		if *block.Hash() != *ancestor.Hash() {
+			t.Errorf("incorrect look back:\nExpected %x\nFound %x", *ancestor.Hash(), *block.Hash())
+		}
+	}
+}
+
+func TestBlockChainConsensusAncestorMaxPastGenesis(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(10, ancestor.(*block), c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// fetch ancestor from current tip
+	if block, err := c.Ancestor(c.tip.Hash(), 100); err != nil {
+		t.Errorf("failed to get ancestor: %s", err)
+	} else {
+		if *block.Hash() != *c.genesisNode.hash() {
+			t.Errorf("incorrect look back:\nExpected %x\nFound %x", *c.genesisNode.hash(), *block.Hash())
+		}
+	}
+}
+
+func TestBlockChainConsensusAncestorInvalidBlock(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(10, ancestor.(*block), c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// fetch ancestor for non existing block tip
+	if _, err := c.Ancestor(core.BytesToByte64([]byte("some invalid hash")), 10); err == nil {
+		t.Errorf("failed to detect invalid block in Ancestors")
+	}
+}
