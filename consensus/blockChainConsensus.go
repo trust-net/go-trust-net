@@ -99,11 +99,15 @@ func NewBlockChainConsensus(genesisTime uint64,
 	return &chain, nil
 }
 
+// return the genesis block
+func (c *BlockChainConsensus) Genesis() *core.Byte64 {
+	return c.genesisNode.hash()
+}
+
 // return the tip of current canonical blockchain
 func (c *BlockChainConsensus) Tip() Block {
 	return c.tip
 }
-
 
 func (chain *BlockChainConsensus) getChainNode(hash *core.Byte64) (*chainNode, error) {
 	if data, err := chain.db.Get(tableKey(tableChainNode, hash)); err != nil {

@@ -90,6 +90,7 @@ func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 		return nil
     } else {
 	    	mgr.engine = engine
+	    	handshakeMsg.Genesis = *engine.Genesis()
     }
 	mgr.SetDb(db.NewPeerSetDbInMemory())
 	return &mgr
@@ -240,21 +241,27 @@ func (mgr *CountrProtocolManager) broadCast(block consensus.Block) int {
 
 func (mgr *CountrProtocolManager) getHandshakeMsg(best consensus.Block) *protocol.HandshakeMsg {
 	handshakeMsg.TotalWeight = *best.Weight()
+	handshakeMsg.TipNumeric = *core.Uint64ToByte8(best.Numeric())
 	return &handshakeMsg
 }
 
-func (mgr *CountrProtocolManager) syncNode(node *protocol.Node) error {
+func isSyncNeeded(best consensus.Block, node *protocol.Node) bool {
+	return node.Status().TotalWeight.Uint64() < best.Weight().Uint64() ||
+		(node.Status().TotalWeight.Uint64() == best.Weight().Uint64() &&
+			node.Status().TipNumeric.Uint64() > best.Numeric())
+}
+
+func (mgr *CountrProtocolManager) syncNode(best consensus.Block, node *protocol.Node) error {
 	// check if need sync
-	best := mgr.engine.BestBlock()
-	if node.Status().TotalWeight.Uint64() <= best.Weight().Uint64() {
+	mgr.logger.Debug("sync: peer Weight/Numeric '%d'/'%d' vs our Weight/Numeric '%d'/'%d'",
+		node.Status().TotalWeight.Uint64(), node.Status().TipNumeric.Uint64(), best.Weight().Uint64(), best.Numeric())
+	if !isSyncNeeded(best, node) {
 		return nil
 	}
 	// lets assume our tip is the last known to us block on main blockchain
 	node.LastHash = best.Hash()
 	// wait until sync completes, or an error
-	for !mgr.isInShutdown && node.Status().TotalWeight.Uint64() > best.Weight().Uint64() {
-		mgr.logger.Debug("Requesting sync: peer weight '%d' > our weight '%d'",
-			node.Status().TotalWeight.Uint64(), best.Weight().Uint64())
+	for !mgr.isInShutdown && isSyncNeeded(best, node) {
 		// request sync starting from the genesis block (in case there was a fork with better chain)
 		if err := node.Send(GetBlockHashesRequest, GetBlockHashesRequestMsg{
 				ParentHash: *node.LastHash,
@@ -298,43 +305,36 @@ func (mgr *CountrProtocolManager) listen(peer *protocol.Node) error {
 			case GetBlockHashesRequest:
 				// handle the sync request message to fetch hashes
 				if err := mgr.handleGetBlockHashesRequestMsg(msg, peer); err != nil {
-					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case GetBlockHashesResponse:
 				// handle the sync response message with hashes
 				if err := mgr.handleGetBlockHashesResponseMsg(msg, peer); err != nil {
-					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case GetBlockHashesRewind:
 				// handle the sync rewind message
 				if err := mgr.handleGetBlockHashesRewindMsg(msg, peer); err != nil {
-					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case GetBlocksRequest:
 				// handle sync request to fetch block specs
 				if err := mgr.handleGetBlocksRequestMsg(msg, peer); err != nil {
-					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case GetBlocksResponse:
 				// handle sync request to fetch block specs
 				if err := mgr.handleGetBlocksResponseMsg(msg, peer); err != nil {
-					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case NewBlock:
 				// handle new block announcement
 				if err := mgr.handleNewBlockMsg(msg, peer); err != nil {
-					peer.Peer().Log().Error("Error: %s", err.Error())
 					return err
 				}
 			default:
 				// error condition, unknown protocol message
 				err := protocol.NewProtocolError(protocol.ErrorUnknownMessageType, "unknown protocol message recieved")
-				mgr.logger.Error("Error: %s", err.Error())
 				return err
 		}
 	}
@@ -566,7 +566,7 @@ func (mgr *CountrProtocolManager) handleGetBlockHashesRequestMsg(msg p2p.Msg, fr
 //	blocks := mgr.chain.Blocks(&request.ParentHash, request.MaxBlocks.Uint64())
 	blocks, err := mgr.engine.Descendents(&request.ParentHash, int(request.MaxBlocks.Uint64()))
 	if err != nil {
-		mgr.logger.Debug("failed to fetch descendents:", err)
+		mgr.logger.Error("failed to fetch descendents: %s", err)
 		return err
 	}
 	mgr.logger.Debug("Syncing: sending '%d' blocks to '%s'", len(blocks), from.ID())
@@ -634,7 +634,8 @@ func (mgr *CountrProtocolManager) Protocol() p2p.Protocol {
 				node := protocol.NewNode(peer, ws)
 				
 				// initiate handshake with the new peer
-				if err := mgr.Handshake(mgr.getHandshakeMsg(mgr.engine.BestBlock()), node); err != nil {
+				myBest := mgr.engine.BestBlock()
+				if err := mgr.Handshake(mgr.getHandshakeMsg(myBest), node); err != nil {
 					mgr.logger.Error("%s: %s", peer.Name(), err)
 					return err
 				} else {
@@ -650,13 +651,15 @@ func (mgr *CountrProtocolManager) Protocol() p2p.Protocol {
 
 				// check and perform a sync based on total weight
 				go func() {
-					if err := mgr.syncNode(node); err != nil {
+					if err := mgr.syncNode(myBest, node); err != nil {
 						mgr.logger.Error("Sync failed: '%s'", err)
 					}
 				}()
 				
 				// start the listener for this node
-				mgr.listen(node)
+				if err := mgr.listen(node); err != nil {
+					mgr.logger.Error("Disconnecting node: %s, Reason: %s", node.Id() ,err.Error())
+				}
 				return nil
 			},
 	}
