@@ -285,6 +285,14 @@ func (c *BlockChainConsensus) TransactionStatus(tx *Transaction) (Block, error) 
 		c.logger.Debug("Transaction does not exists: %x", tx.Id())
 		return nil, core.NewCoreError(ERR_TX_NOT_FOUND, "transaction not found")
 	} else 
+	// verify if the block is on canonical chain
+	if node, err := c.getChainNode(hash); err != nil {
+		c.logger.Error("Failed to get chain node for transaction: %s", err)
+		return nil, core.NewCoreError(ERR_DB_CORRUPTED, "error reading transaction's chain node")
+	} else if !node.isMainList() {
+		c.logger.Debug("Transaction not on canonical chain: %x", tx.Id())
+		return nil, core.NewCoreError(ERR_TX_NOT_FOUND, "transaction not found")
+	} else
 	// find the block that finalized the transaction
 	if block, err := c.getBlock(hash); err != nil {
 		c.logger.Error("Failed to get block for transaction: %s", err)

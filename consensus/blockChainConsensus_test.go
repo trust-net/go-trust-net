@@ -230,6 +230,40 @@ func TestTransactionStatus(t *testing.T) {
 		t.Errorf("transaction has incorrect block")
 	}
 }
+
+func TestTransactionStatusNotCanonicalChain(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, _ := NewBlockChainConsensus(genesisTime, testNode, db)
+
+	// create a candidate block
+	block := c.NewCandidateBlock()
+	// add a transaction to the block
+	tx := testTransaction("transaction 1")
+	block.AddTransaction(tx)
+	// add block to the chain
+	addBlock(block, c)
+
+	// query for transaction, now it should be registered with new block
+	if b,err := c.TransactionStatus(tx); err != nil {
+		t.Errorf("failed to get transaction status: %s", err)
+		return
+	} else if *b.Hash() != *block.Hash() {
+		t.Errorf("transaction has incorrect block")
+	}
+
+	// hack DB to remove block from main list
+	blockNode,_ := c.getChainNode(block.Hash())
+	blockNode.setMainList(false)
+	c.putChainNode(blockNode)
+
+	// query for transaction, this time block should not show as registered
+	if _,err := c.TransactionStatus(tx); err == nil {
+		t.Errorf("failed to mark transaction unregistered for non canonical chain block")
+	}
+}
+
 func TestTransactionStatusAfterRebalance(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
@@ -247,7 +281,9 @@ func TestTransactionStatusAfterRebalance(t *testing.T) {
 	uncle.AddTransaction(tx)
 	uncle.computeHash()
 	c.putBlock(uncle)
-	c.putChainNode(newChainNode(uncle))
+	uncleNode := newChainNode(uncle)
+	uncleNode.setMainList(true)
+	c.putChainNode(uncleNode)
 	uncle.registerTransactions()
 
 	// add a parent block to blockchain
@@ -280,7 +316,6 @@ func TestTransactionStatusAfterRebalance(t *testing.T) {
 	}
 
 	// build a new block simulating parent's child and uncle's nephew
-	log.SetLogLevel(log.DEBUG)
 	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
 	child.UNCLEs = append(child.UNCLEs, *uncle.Hash())
 	// add the same transaction to the new child block

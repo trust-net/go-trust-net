@@ -202,36 +202,26 @@ func (mgr *CountrProtocolManager) delta(name string, opCode *core.Byte8, delta i
 }
 
 func (mgr *CountrProtocolManager) Increment(name string, delta int) (uint64) {
-//	if countr, err := mgr.Countr(name); err != nil {
-//		return nil, err
-//	} else {
-//		mgr.logger.Debug("Incrementing network counter from '%d' --> '%d'", countr, countr+uint64(delta))
-//		for delta > 0 {
-//			if  mgr.delta(name, OpIncrement, delta) {
-//				delta--
-//			} else {
-//				return 0
-//			}
-//		}
-////	}
-	mgr.delta(name, OpIncrement, delta)
+	for delta > 0 {
+		if  mgr.delta(name, OpIncrement, 1) {
+			delta--
+		} else {
+			return 0
+		}
+	}
+//	mgr.delta(name, OpIncrement, delta)
 	return mgr.Countr(countrName)
 }
 
 func (mgr *CountrProtocolManager) Decrement(name string, delta int) (uint64) {
-//	if countr, err := mgr.Countr(name); err != nil {
-//		return nil, err
-//	} else {
-//		mgr.logger.Debug("Incrementing network counter from '%d' --> '%d'", countr, countr-uint64(delta))
-//		for delta > 0 {
-//			if  mgr.delta(name, OpDecrement, delta) {
-//				delta--
-//			} else {
-//				return 0
-//			}
-//		}
-////	}
-	mgr.delta(name, OpDecrement, delta)
+	for delta > 0 {
+		if  mgr.delta(name, OpDecrement, 1) {
+			delta--
+		} else {
+			return 0
+		}
+	}
+//	mgr.delta(name, OpIncrement, delta)
 	return mgr.Countr(countrName)
 }
 
