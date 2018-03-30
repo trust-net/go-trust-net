@@ -145,16 +145,24 @@ func TestComputeHash(t *testing.T) {
 	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
 	tx1 := testTransaction("transaction 1")
 	tx2 := testTransaction("transaction 2")
+	// put tx1 into DB simulating a different block entry
+	prevHash := core.BytesToByte64([]byte("some random hash"))
+	ws.RegisterTransaction(tx1.Id(), prevHash)
 	orig.AddTransaction(tx1)
 	orig.AddTransaction(tx2)
 	orig.addUncle(testUncle)
 	if hash := orig.computeHash(); hash == nil {
 		t.Errorf("Failed to compute hash")
 	}
+//	if hash, err := ws.HasTransaction(tx1.Id()); err != nil {
+//		t.Errorf("Compute hash did not update world state with transaction: %s", err)
+//	} else if *hash != *orig.Hash() {
+//		t.Errorf("Compute hash used incorrect block for transaction:\nExpected %x\nFound %x", *orig.Hash(), *hash)
+//	}
 	if hash, err := ws.HasTransaction(tx1.Id()); err != nil {
 		t.Errorf("Compute hash did not update world state with transaction: %s", err)
-	} else if *hash != *orig.Hash() {
-		t.Errorf("Compute hash used incorrect block for transaction:\nExpected %x\nFound %x", *orig.Hash(), *hash)
+	} else if *hash != *prevHash {
+		t.Errorf("Compute hash overwrote transaction:\nExpected '%s'\nFound '%s'", *prevHash, *hash)
 	}
 }
 
@@ -452,19 +460,42 @@ func TestPersistState(t *testing.T) {
 	if _, err := b.worldState.Lookup([]byte("key2")); err != nil {
 		t.Errorf("did not find deleted key in world state before compute hash")
 	}
-	if _, err := b.worldState.HasTransaction(tx.Id()); err == nil {
-		t.Errorf("did not expect transaction in world state before compute hash")
-	}
-	// compute hash
-	b.computeHash()
+//	if _, err := b.worldState.HasTransaction(tx.Id()); err == nil {
+//		t.Errorf("did not expect transaction in world state before compute hash")
+//	}
+	// persist state
+	b.persistState()
 	if _, err := b.worldState.Lookup([]byte("key1")); err != nil {
 		t.Errorf("did not find update in world state after compute hash")
 	}
 	if _, err := b.worldState.Lookup([]byte("key2")); err == nil {
 		t.Errorf("found deleted key in world state after compute hash")
 	}	
+	if _, err := b.worldState.HasTransaction(tx.Id()); err == nil {
+		t.Errorf("did not expect transaction in world state after compute hash")
+	}
+}
+
+func TestRegisterTransactions(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	ws := trie.NewMptWorldState(db)
+	now := uint64(time.Now().UnixNano())
+	weight, depth := uint64(23), uint64(20)
+	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	// add a transaction
+	tx := testTransaction("transaction 1")
+	b.AddTransaction(tx)
+	b.computeHash()
+	// these should not yet show up in world state
+	if _, err := b.worldState.HasTransaction(tx.Id()); err == nil {
+		t.Errorf("did not expect transaction in world state after compute hash")
+	}
+	// register transactions
+	b.registerTransactions()
 	if _, err := b.worldState.HasTransaction(tx.Id()); err != nil {
-		t.Errorf("did not find transaction in world state after compute hash")
+		t.Errorf("did not find transaction in world state after register transactions")
 	}
 }
 

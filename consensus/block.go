@@ -207,8 +207,8 @@ func (b *block) persistState() error {
 
 // block hash = SHA512(parent_hash + author_node + timestamp + state + depth + transactions... + weight + uncles... + nonce)
 func (b *block) computeHash() *core.Byte64 {
-	log.AppLogger().Info("START OF MINING...")
-	defer log.AppLogger().Info("...END OF MINING")
+//	log.AppLogger().Info("START OF MINING...")
+//	defer log.AppLogger().Info("...END OF MINING")
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	// parent hash +
@@ -228,11 +228,11 @@ func (b *block) computeHash() *core.Byte64 {
 	if b.worldState != nil {
 		// persist the world state
 		if b.persistState() != nil {
-			log.AppLogger().Error("FAILED TO PERSIST STATE")
+//			log.AppLogger().Error("FAILED TO PERSIST STATE")
 			// return error value
 			return nil
 		}
-		log.AppLogger().Info("DONE PERSIST STATE")
+//		log.AppLogger().Info("DONE PERSIST STATE")
 		// if its not network block, then update state
 		if !b.isNetworkBlock {
 			b.STATE = b.worldState.Hash()
@@ -240,7 +240,7 @@ func (b *block) computeHash() *core.Byte64 {
 		state := b.worldState.Hash()
 		statePtr = &state
 	} else {
-		log.AppLogger().Info("DID NOT PERSIST STATE")
+//		log.AppLogger().Info("DID NOT PERSIST STATE")
 		statePtr = &b.STATE
 	}
 //	data = append(data, b.STATE.Bytes()...)
@@ -257,7 +257,7 @@ func (b *block) computeHash() *core.Byte64 {
 	var hash [sha512.Size]byte
 	isPoWDone := false
 
-	log.AppLogger().Info("start of PoW...")
+//	log.AppLogger().Info("start of PoW...")
 	for !isPoWDone {
 		// TODO: run the PoW
 		b.NONCE = *core.Uint64ToByte8(nonce)
@@ -274,20 +274,27 @@ func (b *block) computeHash() *core.Byte64 {
 			return nil
 		}
 	}
-	log.AppLogger().Info("... end of PoW")
+//	log.AppLogger().Info("... end of PoW")
 	b.hash = core.BytesToByte64(hash[:])
-	// update the world state with this block's transactions
+	// this needs to be moved to consensus engine, to update whenever a block is added/re-added to canonical chain
+//	// update the world state with this block's transactions
+//	if b.registerTransactions() != nil {
+//		b.hash = nil
+//	}
+	return b.hash
+}
+
+func (b *block) registerTransactions() error {
 	log.AppLogger().Info("start of transaction update...")
 	if b.worldState != nil {
 		for _, tx := range b.TXs {
 			if err := b.worldState.RegisterTransaction(tx.Id(), b.hash); err != nil {
-				b.hash = nil
-				break
+				return err
 			}
 		}
 	}
 	log.AppLogger().Info("... end of transaction update")
-	return b.hash
+	return nil	
 }
 
 // create a copy of block

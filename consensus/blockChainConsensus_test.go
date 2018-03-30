@@ -230,6 +230,77 @@ func TestTransactionStatus(t *testing.T) {
 		t.Errorf("transaction has incorrect block")
 	}
 }
+func TestTransactionStatusAfterRebalance(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	addBlock(ancestor, c)
+
+	// add an uncle block to blockchain
+	uncle := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	// add a transaction to the uncle block
+	tx := testTransaction("transaction 1")
+	uncle.AddTransaction(tx)
+	uncle.computeHash()
+	c.putBlock(uncle)
+	c.putChainNode(newChainNode(uncle))
+	uncle.registerTransactions()
+
+	// add a parent block to blockchain
+	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	parent.computeHash()
+	c.putBlock(parent)
+	parent.registerTransactions()
+
+	// set the parent as ancestor's main list child
+	parentNode := newChainNode(parent)
+	parentNode.setMainList(true)
+	c.putChainNode(parentNode)
+	ancestorNode := newChainNode(ancestor.(*block))
+	ancestorNode.addChild(parent.Hash())
+	ancestorNode.setMainList(true)
+	c.putChainNode(ancestorNode)
+
+	// query for transaction, it should be registered with uncle block
+	var b Block
+	if b,err = c.TransactionStatus(tx); err != nil {
+		t.Errorf("failed to get transaction status: %s", err)
+		return
+	}
+	if b == nil {
+		t.Errorf("got nil instance")
+		return
+	}
+	if *b.Hash() != *uncle.Hash() {
+		t.Errorf("transaction has incorrect block")
+	}
+
+	// build a new block simulating parent's child and uncle's nephew
+	log.SetLogLevel(log.DEBUG)
+	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	child.UNCLEs = append(child.UNCLEs, *uncle.Hash())
+	// add the same transaction to the new child block
+	child.AddTransaction(tx)
+	// add the block
+	addBlock(child, c)
+
+	// query for transaction, now it should be registered with new child block
+	if b,err = c.TransactionStatus(tx); err != nil {
+		t.Errorf("failed to get transaction status: %s", err)
+		return
+	}
+	if b == nil {
+		t.Errorf("got nil instance")
+		return
+	}
+	if *b.Hash() != *child.Hash() {
+		t.Errorf("transaction has incorrect block")
+	}
+}
 
 func TestDeserializeNetworkBlock(t *testing.T) {
 	log.SetLogLevel(log.NONE)

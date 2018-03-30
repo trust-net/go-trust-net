@@ -523,7 +523,12 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 		}
 		// change the world state
 		if err := c.state.Rebase(child.STATE); err != nil {
-			return core.NewCoreError(ERR_DB_CORRUPTED, "failed to update world state")
+			c.logger.Error("failed to register transaction: %s", err)
+			return err
+		}
+		// register transactions for the block
+		if err := child.registerTransactions(); err != nil {
+			return core.NewCoreError(ERR_DB_CORRUPTED, "failed to update tip in DB")
 		}
 		
 		// walk up the ancestor list setting them up as main list nodes
@@ -533,6 +538,11 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 		for !parentNode.isMainList() {
 			parentNode.setMainList(true)
 			c.putChainNode(parentNode)
+			// update transactions for the block
+			if b, err := c.getBlock(parentNode.hash()); err == nil {
+				b.worldState = c.state
+				b.registerTransactions()
+			}
 			mainListParent = parentNode
 			parentNode, _ = c.getChainNode(parentNode.parent())
 		}
