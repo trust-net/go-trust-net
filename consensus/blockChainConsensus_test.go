@@ -272,16 +272,16 @@ func TestDuplicateTransactionCheckInMining(t *testing.T) {
 
 	// create a candidate block
 	block1 := c.NewCandidateBlock()
-	// add a transaction to the block
-	tx := testTransaction("transaction 1")
-	block1.AddTransaction(tx)
 	// add block to the chain
 	addBlock(block1, c)
 
 	// create another candidate block
 	block2 := c.NewCandidateBlock()
-	// add same transaction (duplicate) to the block
+	// add a transaction to the block
+	tx := testTransaction("transaction 1")
 	block2.AddTransaction(tx)
+	// add same transaction (duplicate) into DB
+	c.state.RegisterTransaction(tx.Id(), block1.Hash())
 	// add block to the chain
 	if err := addBlock(block2, c); err == nil {
 		t.Errorf("failed to detect duplicate transaction")
@@ -300,19 +300,38 @@ func TestTransactionStatusAfterRebalance(t *testing.T) {
 	ancestor := c.NewCandidateBlock()
 	addBlock(ancestor, c)
 
-	// add an uncle block to blockchain
-	uncle := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
-	// add a transaction to the uncle block
-	tx := testTransaction("transaction 1")
-	uncle.AddTransaction(tx)
-	uncle.computeHash()
-	c.putBlock(uncle)
-	uncleNode := newChainNode(uncle)
-	uncleNode.setMainList(true)
-	c.putChainNode(uncleNode)
-	uncle.registerTransactions()
 
-	// query for transaction, it should be registered with uncle block
+	// create two parallel blocks on blockchain
+	block1 := c.NewCandidateBlock()
+	block2 := c.NewCandidateBlock()
+	
+	// create new world states on the two blocks
+	block1.Update([]byte("key1"), []byte("value1"))
+	block2.Update([]byte("key2"), []byte("value2"))
+	
+	// add the two blocks into block chain
+	addBlock(block1, c)
+	addBlock(block2, c)
+	
+	// verify that block's world state are different
+	if block1.(*block).STATE == block2.(*block).STATE {
+		t.Errorf("block states are not different")
+	}
+	
+	// indentify the parent and uncle blocks
+	var uncle, parent Block
+	if *c.tip.Hash() == *block1.Hash() {
+		uncle = block2
+		parent = block1
+	} else {
+		uncle = block1
+		parent = block2
+	}
+
+	// update DB to add a transaction to the current parent block
+	tx := testTransaction("transaction 1")
+	c.state.RegisterTransaction(tx.Id(), parent.Hash())
+	// query for transaction, it should be registered with parent block
 	var b Block
 	if b,err = c.TransactionStatus(tx); err != nil {
 		t.Errorf("failed to get transaction status: %s", err)
@@ -322,49 +341,29 @@ func TestTransactionStatusAfterRebalance(t *testing.T) {
 		t.Errorf("got nil instance")
 		return
 	}
-	if *b.Hash() != *uncle.Hash() {
+	if *b.Hash() != *parent.Hash() {
 		t.Errorf("transaction has incorrect block")
 	}
 
-	// add a parent block to blockchain
-	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
-	parent.computeHash()
-	c.putBlock(parent)
-	parent.registerTransactions()
+	// build a new block simulating uncle's child and parent's nephew
+	child := newBlock(uncle.Hash(), uncle.Weight().Uint64() + 1 + 1, uncle.Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, uncle.(*block).worldState)
+	child.UNCLEs = append(child.UNCLEs, *parent.Hash())
 
-	// set the parent as ancestor's main list child
-	parentNode := newChainNode(parent)
-	parentNode.setMainList(true)
-	c.putChainNode(parentNode)
-	uncleNode.setMainList(false)
-	c.putChainNode(uncleNode)
-	ancestorNode := newChainNode(ancestor.(*block))
-	ancestorNode.addChild(parent.Hash())
-	ancestorNode.setMainList(true)
-	c.putChainNode(ancestorNode)
+	// try adding same transaction (duplicate) to the child block
+	if err := child.AddTransaction(tx); err == nil || err.(*core.CoreError).Code() != ERR_DUPLICATE_TX {
+		t.Errorf("failed to detect duplicate transaction")
+	}
 
-	// build a new block simulating parent's child and uncle's nephew
-	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
-	child.UNCLEs = append(child.UNCLEs, *uncle.Hash())
-	// add the same transaction to the new child block
-	child.AddTransaction(tx)
 	// add the block
 	if err := addBlock(child, c); err != nil {
-		t.Errorf("failed to add child block with transaction: %s", err)
+		t.Errorf("failed to add child block: %s", err)
 		return
 	}
 
 	// query for transaction, now it should be registered with new child block
-	if b,err = c.TransactionStatus(tx); err != nil {
-		t.Errorf("failed to get transaction status: %s", err)
+	if b,err = c.TransactionStatus(tx); err == nil || err.(*core.CoreError).Code() != ERR_TX_NOT_APPLIED {
+		t.Errorf("failed to get invalid transaction status: %s", err)
 		return
-	}
-	if b == nil {
-		t.Errorf("got nil instance")
-		return
-	}
-	if *b.Hash() != *child.Hash() {
-		t.Errorf("transaction has incorrect block")
 	}
 }
 

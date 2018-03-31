@@ -415,8 +415,22 @@ func TestTransactionAddDuplicateTransaction(t *testing.T) {
 	tx := testTransaction("test transaction")
 	// add transaction
 	b.AddTransaction(tx)
-//	// populate DB with transaction
-//	ws.RegisterTransaction(tx.Id(), core.BytesToByte64([]byte("some random block id")))
+	// now attempt to add this transaction again to the block
+	if err := b.AddTransaction(tx); err == nil || err.(*core.CoreError).Code() != ERR_DUPLICATE_TX {
+		t.Errorf("failed to detect pre-existing transaction")
+	}
+}
+
+func TestTransactionAddExistingTransaction(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	ws := trie.NewMptWorldState(db)
+	now := uint64(time.Now().UnixNano())
+	weight, depth := uint64(23), uint64(20)
+	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	tx := testTransaction("test transaction")
+	// populate DB with transaction
+	ws.RegisterTransaction(tx.Id(), core.BytesToByte64([]byte("some random block id")))
 	// now attempt to add this transaction again to the block
 	if err := b.AddTransaction(tx); err == nil || err.(*core.CoreError).Code() != ERR_DUPLICATE_TX {
 		t.Errorf("failed to detect pre-existing transaction")

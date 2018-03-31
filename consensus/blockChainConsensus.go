@@ -301,7 +301,7 @@ func (c *BlockChainConsensus) transactionStatus(tx *Transaction) (Block, *chainN
 		return nil, nil, core.NewCoreError(ERR_DB_CORRUPTED, "error reading transaction's chain node")
 	} else if !node.isMainList() {
 		c.logger.Debug("Transaction not on canonical chain: %x", *tx.Id())
-		return nil, node, core.NewCoreError(ERR_TX_NOT_FOUND, "transaction not found")
+		return nil, node, core.NewCoreError(ERR_TX_NOT_APPLIED, "transaction not on canonical chain")
 	} else
 	// find the block that finalized the transaction
 	if block, err := c.getBlock(hash); err != nil {
@@ -515,7 +515,7 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 		c.logger.Debug("block already exists: %x", *child.Hash())
 		return core.NewCoreError(ERR_DUPLICATE_BLOCK, "duplicate block")
 	}
-	// verify that block does not have duplicate transactions
+	// verify that block is not introducing a duplicate transactions in the canonical chain
 	for _, tx := range child.Transactions() {
 		c.logger.Debug("Checking pre-existing transaction: %x", *tx.Id())
 		if b, n, _ := c.transactionStatus(&tx);  b != nil && n != nil &&

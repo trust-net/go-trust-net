@@ -151,15 +151,16 @@ func (b *block) Transactions() []Transaction {
 func (b *block) AddTransaction(tx *Transaction) error {
 	b.lock.Lock()
 	defer b.lock.Unlock()
-	// first check if transaction does not already exists
+	// first check if transaction does not already exists in parent's world state view
+	if _, err := b.worldState.HasTransaction(tx.Id()); err == nil {
+		return core.NewCoreError(ERR_DUPLICATE_TX, "duplicate transaction")
+	}
+	// now check if transaction was not already added to this block
 	if _, found := b.transactions[*tx.Id()]; found {
 		return core.NewCoreError(ERR_DUPLICATE_TX, "duplicate transaction")
 	} else {
 		b.transactions[*tx.Id()] = true
 	}
-//	if _, err := b.worldState.HasTransaction(tx.Id()); err == nil {
-//		return core.NewCoreError(ERR_DUPLICATE_TX, "duplicate transaction")
-//	}
 	// accept transaction to the list 
 	b.TXs = append(b.TXs, *tx)
 	// not updating world state with transactions yet because don't have hash computed yet,
