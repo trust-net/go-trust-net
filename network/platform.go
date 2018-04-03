@@ -2,6 +2,7 @@ package network
 
 import (
 	"sync"
+	"time"
 	"github.com/trust-net/go-trust-net/consensus"
 	"github.com/trust-net/go-trust-net/common"
 	"github.com/trust-net/go-trust-net/core"
@@ -30,6 +31,10 @@ type PlatformManager interface {
 var (
 	// size of transaction queue
 	txQueueSize = 10
+	// max transactions in a block
+	maxTxCount = 10
+	// max time to wait for a transaction
+	maxTxWaitSec = 10 * time.Second
 	// wait limit for handshake message read
 	msgReadTimeout = 5
 	// start time for genesis block
@@ -44,6 +49,7 @@ type platformManager struct {
 	engine consensus.Consensus
 	stateDb db.Database
 	txQ chan *consensus.Transaction
+	shutdownBlockProducer chan bool
 	peerDb db.PeerSetDb
 	peerCount	int
 }
@@ -66,6 +72,7 @@ func NewPlatformManager(appConfig *AppConfig, srvConfig *ServiceConfig, appDb db
 		config: config,
 		stateDb: appDb,
 		txQ: make(chan *consensus.Transaction, txQueueSize),
+		shutdownBlockProducer: make(chan bool),
 		peerDb: db.NewPeerSetDbInMemory(),
 	}
 	// TODO: change blockchain intialization to use genesis block header as parameters instead of hard coded genesis time
@@ -177,4 +184,89 @@ func (mgr *platformManager) validateAndAdd(handshake *HandshakeMsg, peer PeerNod
 		peer.SetStatus(&peerConf)
 	}
 	return nil
+}
+
+func (mgr *platformManager) Submit(txPayload []byte, submitter *core.Byte64) *core.Byte64 {
+	// create an instance of transaction
+	tx := consensus.NewTransaction(txPayload, submitter)
+	// put transaction into the queue
+	mgr.txQ <- tx
+	// return the transaction ID for status check by application
+	return tx.Id()
+}
+
+func (mgr *platformManager) mineCandidateBlock(newBlock consensus.Block) bool {
+	done := make (chan struct{})
+	success := false
+	mgr.logger.Debug("sending block for mining")
+	mgr.engine.MineCandidateBlock(newBlock, func(block consensus.Block, err error) {
+			if err != nil {
+				mgr.logger.Debug("failed to mine candidate block: %s", err)
+			} else {
+				mgr.logger.Debug("successfully mined candidate block")
+				// send the block over the wire
+				// TODO: publish to a channel
+				success = true
+			}
+			done <- struct{}{}
+	})
+	// wait for mining to finish
+	mgr.logger.Debug("waiting for mining to complete")
+	<- done	
+	mgr.logger.Debug("mining result: %s", success)
+	return success
+}
+
+// background go routine to produce blocks with transactions from queue
+func (mgr *platformManager) blockProducer() {
+	mgr.logger.Debug("starting up block producer")
+	newBlock := mgr.engine.NewCandidateBlock()
+	txCount := 0
+	// start a timer, in case there are no transactions
+	mgr.logger.Debug("starting timer for %d duration", maxTxWaitSec)
+	wait := time.NewTimer(maxTxWaitSec)
+	defer wait.Stop()
+	for {
+		select {
+			case <- mgr.shutdownBlockProducer:
+				mgr.logger.Debug("shutting down block producer")
+				return
+			case tx := <- mgr.txQ:
+				mgr.logger.Debug("processing transaction id: %x", *tx.Id())
+				if mgr.processTx(tx, newBlock) {
+					// application processed transaction successfully, add to block
+					newBlock.AddTransaction(tx)
+					txCount++
+					if txCount == maxTxCount {
+						// we are at capacity, no more transactions in this block
+						mgr.logger.Debug("reached maximum transactions for current block")
+						wait.Reset(maxTxWaitSec*10)
+//						go mgr.mineCandidateBlock(newBlock)
+						mgr.mineCandidateBlock(newBlock)
+						newBlock = mgr.engine.NewCandidateBlock()
+						txCount = 0
+						wait.Reset(maxTxWaitSec)
+					} else {
+						// we got at least one transaction, so no need to wait
+						wait.Reset(50 * time.Millisecond)
+					}
+				}
+			case <- wait.C:
+				mgr.logger.Debug("timed out waiting for transactions")
+				wait.Reset(maxTxWaitSec*10)
+//				go mgr.mineCandidateBlock(newBlock)
+				mgr.mineCandidateBlock(newBlock)
+				newBlock = mgr.engine.NewCandidateBlock()
+				txCount = 0
+				wait.Reset(maxTxWaitSec)
+		}
+	}
+}
+
+// should be called by the background block producer go routine
+func (mgr *platformManager) processTx(tx *consensus.Transaction, block consensus.Block) bool {
+	return mgr.config.TxProcessor(&Transaction{
+		payload: tx.Payload,
+		block: block,
+	})
 }

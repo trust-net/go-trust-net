@@ -2,8 +2,10 @@ package network
 
 import (
     "testing"
+    "time"
 	"github.com/trust-net/go-trust-net/db"
 	"github.com/trust-net/go-trust-net/core"
+	"github.com/trust-net/go-trust-net/consensus"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/ethereum/go-ethereum/p2p"
 )
@@ -290,6 +292,185 @@ func TestHandshakeDecodeError(t *testing.T) {
 		if err := mgr.Handshake(handshake, peer); err == nil || err.(*core.CoreError).Code() != ErrorHandshakeFailed {
 			t.Errorf("Failed to detect message decode error: %s", err)
 			return
+		}
+	}
+}
+
+func TestPlatformManagerSubmitTx(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	called := false
+	var payload []byte
+	var block consensus.Block
+	conf := testNetworkConfig(func(tx *Transaction) bool{
+			called = true
+			payload = append(payload, tx.Payload()...)
+			block = tx.block
+			return true
+		}, nil, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		// submit transaction
+		txPayload := []byte("test tx payload")
+		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
+		mgr.Submit(txPayload, txSubmitter)
+		// hack, call to processTx should actually be from block producer go routine
+		mgr.processTx(<- mgr.txQ, mgr.engine.NewCandidateBlock())
+		if !called {
+			t.Errorf("transaction never got processed")
+		}
+		if string(payload) != "test tx payload" {
+			t.Errorf("transaction payload incorrect: '%s'", payload)
+		}
+		if block == nil {
+			t.Errorf("transaction block is nil")
+		}
+	}
+}
+
+func TestPlatformManagerBlockProducer(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	called := false
+	var payload []byte
+	var block consensus.Block
+	conf := testNetworkConfig(func(tx *Transaction) bool{
+			called = true
+			payload = append(payload, tx.Payload()...)
+			block = tx.block
+			return true
+		}, nil, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		// override timeout
+		maxTxWaitSec = 1 * time.Second
+		// start block producer
+		go mgr.blockProducer()
+		// submit transaction
+		txPayload := []byte("test tx payload")
+		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
+		mgr.Submit(txPayload, txSubmitter)
+		// sleep 1 sec, hoping transaction will get processed till then
+		time.Sleep(1 * time.Second)
+		mgr.shutdownBlockProducer <- true
+		if !called {
+			t.Errorf("transaction never got processed")
+		}
+		if string(payload) != "test tx payload" {
+			t.Errorf("transaction payload incorrect: '%s'", payload)
+		}
+		if block == nil {
+			t.Errorf("transaction block is nil")
+		}
+	}
+}
+
+func TestPlatformManagerBlockProducerWaitTimeout(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	called := false
+	conf := testNetworkConfig(func(tx *Transaction) bool{
+			called = true
+			return true
+		}, nil, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		// get current tip from consensus engine
+		pre := mgr.engine.BestBlock()
+		// override timeout
+		maxTxWaitSec = 1 * time.Second
+		// start block producer
+		go mgr.blockProducer()
+		// DO NOT submit transaction
+		// sleep 2 sec, a block should be produced by then
+		time.Sleep(2 * time.Second)
+		mgr.shutdownBlockProducer <- true
+		// get tip after timeout
+		post := mgr.engine.BestBlock()
+		if post.Depth().Uint64() <= pre.Depth().Uint64() {
+			t.Errorf("no blocks produced on timeout")
+		}
+	}
+}
+
+func TestPlatformManagerBlockProducerMultipleTransactions(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	callCount := 0
+	conf := testNetworkConfig(func(tx *Transaction) bool{
+			callCount++
+			return true
+		}, nil, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		// get current tip from consensus engine
+		pre := mgr.engine.BestBlock()
+		// override timeout
+		maxTxWaitSec = 1 * time.Second
+		// start block producer
+		go mgr.blockProducer()
+		// submit multiple transactions transaction
+		for i := 0; i<5; i++ {
+			txPayload := []byte("test tx payload")
+			txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
+			mgr.Submit(txPayload, txSubmitter)
+		}
+		// sleep 1 sec, one block should be produced by then
+		time.Sleep(1 * time.Second)
+		mgr.shutdownBlockProducer <- true
+		// get tip after timeout
+		post := mgr.engine.BestBlock()
+		if callCount != 5 {
+			t.Errorf("number of processed transactions no correct: %d", callCount)
+		}
+		if post.Depth().Uint64() != pre.Depth().Uint64()+1 {
+			t.Errorf("more than 1 blocks produced")
+		}
+	}
+}
+
+func TestPlatformManagerBlockProducerMaxTransactionsPerBlock(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	callCount := 0
+	conf := testNetworkConfig(func(tx *Transaction) bool{
+			callCount++
+			return true
+		}, nil, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		// get current tip from consensus engine
+		pre := mgr.engine.BestBlock()
+		// override timeout
+		maxTxWaitSec = 1 * time.Second
+		// start block producer
+		go mgr.blockProducer()
+		// submit multiple transactions transaction
+		for i := 0; i<15; i++ {
+			txPayload := []byte("test tx payload")
+			txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
+			mgr.Submit(txPayload, txSubmitter)
+		}
+		// sleep 1 sec, two block should be produced by then
+		time.Sleep(1 * time.Second)
+		mgr.shutdownBlockProducer <- true
+		// get tip after timeout
+		post := mgr.engine.BestBlock()
+		if callCount != 15 {
+			t.Errorf("number of processed transactions no correct: %d", callCount)
+		}
+		if post.Depth().Uint64() != pre.Depth().Uint64()+2 {
+			t.Errorf("did not produce 2 blocks")
 		}
 	}
 }
