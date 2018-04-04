@@ -247,6 +247,13 @@ func (c *BlockChainConsensus) findNonDirectAncestors(childNode *core.Byte64, rem
 	return uncles
 }
 
+func (c *BlockChainConsensus) MineCandidateBlockPoW(b Block, apprvr PowApprover, cb MiningResultHandler) {
+	blk := b.(*block)
+	blk.pow = apprvr
+	go c.mineCandidateBlock(blk, cb)
+}
+
+
 // submit a "filled" block for mining (executes as a goroutine)
 // it will mine the block and update canonical chain or abort if a new network block
 // is received with same or higher weight, the callback MiningResultHandler will be called

@@ -20,7 +20,7 @@ type AppConfig struct {
 }
 
 type TxProcessor	func(txs *Transaction) bool
-type PowApprover	func(hash *core.Byte64) bool
+type PowApprover	func(hash []byte) bool
 type PeerValidator func(config *AppConfig) error
 
 type ServiceConfig struct {

@@ -24,7 +24,6 @@ func RunTimeBound(sec time.Duration, method func () error, timeoutError error) e
 			break
 		case <- wait.C:
 			err = timeoutError
-			close(done)
 	}
 	return err
 }

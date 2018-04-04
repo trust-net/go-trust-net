@@ -8,8 +8,8 @@ import (
 // a callback provided by application to handle results of block mining request
 // block instance is provided (to update nodeset with hash), if successful, or error is provided if failed/aborted
 type MiningResultHandler func(block Block, err error)
-//// serialized block is provided, if successful, or error is provided if failed/aborted
-//type MiningResultHandler func(data []byte, err error)
+// a callback provided by application to approve PoW
+type PowApprover	func([]byte) bool
 
 // a consensus platform interface
 type Consensus interface {
@@ -22,6 +22,8 @@ type Consensus interface {
 	// with serialized data for the block that can be  sent over the wire to peers,
 	// or error if mining failed/aborted
 	MineCandidateBlock(b Block, cb MiningResultHandler)
+	// a PoW variant of the MineCandidateBlock method
+	MineCandidateBlockPoW(b Block, apprvr PowApprover, cb MiningResultHandler)
 	// query status of a transaction (its block details) in the canonical chain
 	TransactionStatus(txId *core.Byte64) (Block, error)
 	// deserialize data into network block, and will initialize the block with current canonical parent's

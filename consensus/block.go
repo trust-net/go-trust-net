@@ -11,6 +11,10 @@ import (
 	"github.com/trust-net/go-trust-net/common"
 )
 
+var (
+	computeHashTimeoutSec = 10
+)
+
 type Block interface {
 	ParentHash() *core.Byte64
 	Miner() *core.Byte64
@@ -69,6 +73,7 @@ func init() {
 
 type block struct {
 	BlockSpec
+	pow PowApprover
 	worldState trie.WorldState
 	hash *core.Byte64
 	isNetworkBlock bool
@@ -259,21 +264,31 @@ func (b *block) computeHash() *core.Byte64 {
 	isPoWDone := false
 
 //	log.AppLogger().Info("start of PoW...")
-	for !isPoWDone {
-		// TODO: run the PoW
-		b.NONCE = *core.Uint64ToByte8(nonce)
-		nonce++
-		dataWithNonce = append(data, b.NONCE.Bytes()...)
-		hash = sha512.Sum512(dataWithNonce)
-		// check PoW validation
-		// TODO
-		isPoWDone = true
-		
-		// if a network block, then 1st hash MUST be correct
-		if !isPoWDone && b.isNetworkBlock {
-			// return an error
+	// run the tight loop below in a timeout thread
+	err := common.RunTimeBoundSec(computeHashTimeoutSec, func() error {
+			for !isPoWDone {
+				// TODO: run the PoW
+				b.NONCE = *core.Uint64ToByte8(nonce)
+				nonce++
+				dataWithNonce = append(data, b.NONCE.Bytes()...)
+				hash = sha512.Sum512(dataWithNonce)
+				// check PoW validation
+				if b.pow != nil {
+					isPoWDone = b.pow(hash[:])
+				} else {
+					isPoWDone = true
+				}
+				
+				// if a network block, then 1st hash MUST be correct
+				if !isPoWDone && b.isNetworkBlock {
+					// return an error
+					return core.NewCoreError(ERR_HASH_INCORRECT, "invalid hash on network block")
+				}
+			}
 			return nil
-		}
+		}, core.NewCoreError(ERR_HASH_TIMEOUT, "compute hash timeout"))
+	if err != nil {
+		return nil
 	}
 //	log.AppLogger().Info("... end of PoW")
 	b.hash = core.BytesToByte64(hash[:])

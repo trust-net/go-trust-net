@@ -211,7 +211,7 @@ func (mgr *platformManager) mineCandidateBlock(newBlock consensus.Block) bool {
 	done := make (chan struct{})
 	success := false
 	mgr.logger.Debug("sending block for mining")
-	mgr.engine.MineCandidateBlock(newBlock, func(block consensus.Block, err error) {
+	mgr.engine.MineCandidateBlockPoW(newBlock, consensus.PowApprover(mgr.config.PowApprover), func(block consensus.Block, err error) {
 			if err != nil {
 				mgr.logger.Debug("failed to mine candidate block: %s", err)
 			} else {
@@ -225,7 +225,6 @@ func (mgr *platformManager) mineCandidateBlock(newBlock consensus.Block) bool {
 	// wait for mining to finish
 	mgr.logger.Debug("waiting for mining to complete")
 	<- done	
-	mgr.logger.Debug("mining result: %s", success)
 	return success
 }
 
@@ -253,9 +252,8 @@ func (mgr *platformManager) blockProducer() {
 						// we are at capacity, no more transactions in this block
 						mgr.logger.Debug("reached maximum transactions for current block")
 						wait.Reset(maxTxWaitSec*10)
-//						go mgr.mineCandidateBlock(newBlock)
 						if !mgr.mineCandidateBlock(newBlock) {
-							mgr.logger.Debug("block failed to mine: %x", *newBlock.Hash())
+							mgr.logger.Debug("block failed to mine")
 							// add all transactions of the block to dead list
 							for _,tx := range newBlock.Transactions() {
 								mgr.deadTxs[*tx.Id()] = true
@@ -275,9 +273,8 @@ func (mgr *platformManager) blockProducer() {
 			case <- wait.C:
 				mgr.logger.Debug("timed out waiting for transactions")
 				wait.Reset(maxTxWaitSec*10)
-//				go mgr.mineCandidateBlock(newBlock)
 				if !mgr.mineCandidateBlock(newBlock) {
-					mgr.logger.Debug("block failed to mine: %x", *newBlock.Hash())
+					mgr.logger.Debug("block failed to mine")
 					// add all transactions of the block to dead list
 					for _,tx := range newBlock.Transactions() {
 						mgr.deadTxs[*tx.Id()] = true

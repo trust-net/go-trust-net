@@ -152,6 +152,51 @@ func TestMineCandidateBlock(t *testing.T) {
 	<-done
 }
 
+func TestMineCandidateBlockPoW(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+	// get a new candidate block
+	child := c.NewCandidateBlock()
+	// add a transaction to the candidate block
+	child.Update([]byte("key"), []byte("value"))
+	tx := testTransaction("transaction 1")
+	if err := child.AddTransaction(tx); err != nil {
+		t.Errorf("failed to add transaction: %s", err)
+	}
+	// mining will be executed in a background goroutine
+	log.SetLogLevel(log.NONE)
+	done := make(chan struct{})
+	powCalled := false
+	c.MineCandidateBlockPoW(child, func(hash []byte) bool {
+			powCalled = true
+			return true
+		},func(b Block, err error) {
+			defer func() {done <- struct{}{}}()
+			if err != nil {
+				t.Errorf("failed to mine candidate block: %s", err)
+				return
+			}
+			// canonical chain's tip should match child node
+			if *c.Tip().Hash() != *child.Hash() {
+				t.Errorf("Canonical chain tip does not match mined block")
+			}
+			// world view should also match
+			if c.state.Hash() != child.(*block).STATE {
+				t.Errorf("World state not updated after mining")
+			}
+	});
+	// wait for our callback to finish
+	<-done
+	if !powCalled {
+		t.Errorf("PoW approver not called")
+	}
+}
+
 func TestMineCandidateBlockDuplicate(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()

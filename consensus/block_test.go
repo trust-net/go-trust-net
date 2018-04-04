@@ -166,6 +166,60 @@ func TestComputeHash(t *testing.T) {
 	}
 }
 
+func TestComputeHashPoW(t *testing.T) {
+	weight, depth := uint64(23), uint64(20)
+	dbPre, _ := db.NewDatabaseInMem()
+	ws := trie.NewMptWorldState(dbPre)
+	ws.Update([]byte("key"), []byte("value"))
+	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	// add PoW approver
+	powCalled := false
+	approvals := []bool{false, false, true}
+	approvalCount := 0
+	var lastHash *core.Byte64
+	orig.pow = func(hash []byte) bool {
+			powCalled = true
+			approvalCount++
+			lastHash = core.BytesToByte64(hash)
+			return approvals[approvalCount-1]
+	}
+	if hash := orig.computeHash(); hash == nil {
+		t.Errorf("Failed to compute hash")
+	} else if *hash != *lastHash {
+		t.Errorf("computed hash is not approved")
+	}
+	if !powCalled {
+		t.Errorf("PoW approver not called")
+	}
+}
+
+func TestComputeHashBusyLoop(t *testing.T) {
+	weight, depth := uint64(23), uint64(20)
+	dbPre, _ := db.NewDatabaseInMem()
+	ws := trie.NewMptWorldState(dbPre)
+	ws.Update([]byte("key"), []byte("value"))
+	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	// add PoW approver
+	powCalled := false
+	orig.pow = func(hash []byte) bool {
+		powCalled = true
+		return false
+	}
+	// override timeout to smaller value
+	computeHashTimeoutSec = 1
+	var hash *core.Byte64
+	err := common.RunTimeBoundSec(computeHashTimeoutSec+1, func() error {
+			hash = orig.computeHash()
+			return nil
+		}, core.NewCoreError(0x33333333, "timed out compute hash"))
+	if err != nil {
+		t.Errorf("did not get out of busy loop: %s", err)
+	}
+	if !powCalled {
+		t.Errorf("PoW approver not called")
+	}
+}
+
 func TestNumericInvalidHash(t *testing.T) {
 	weight, depth := uint64(23), uint64(20)
 	dbPre, _ := db.NewDatabaseInMem()
