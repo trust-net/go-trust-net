@@ -228,7 +228,7 @@ func TestHandshakeMsgReadErr(t *testing.T) {
 }
 
 func TestHandshakeWrongMsg(t *testing.T) {
-	log.SetLogLevel(log.DEBUG)
+	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	// create a network config with validator function that accept peer connection
@@ -347,15 +347,15 @@ func TestPlatformManagerBlockProducer(t *testing.T) {
 		t.Errorf("Failed to create platform manager: %s", err)
 	} else {
 		// override timeout
-		maxTxWaitSec = 1 * time.Second
+		maxTxWaitSec = 100 * time.Millisecond
 		// start block producer
 		go mgr.blockProducer()
 		// submit transaction
 		txPayload := []byte("test tx payload")
 		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
 		mgr.Submit(txPayload, txSubmitter)
-		// sleep 1 sec, hoping transaction will get processed till then
-		time.Sleep(1 * time.Second)
+		// sleep a bit, hoping transaction will get processed till then
+		time.Sleep(100 * time.Millisecond)
 		mgr.shutdownBlockProducer <- true
 		if !called {
 			t.Errorf("transaction never got processed")
@@ -384,12 +384,12 @@ func TestPlatformManagerBlockProducerWaitTimeout(t *testing.T) {
 		// get current tip from consensus engine
 		pre := mgr.engine.BestBlock()
 		// override timeout
-		maxTxWaitSec = 1 * time.Second
+		maxTxWaitSec = 100 * time.Millisecond
 		// start block producer
 		go mgr.blockProducer()
 		// DO NOT submit transaction
-		// sleep 2 sec, a block should be produced by then
-		time.Sleep(2 * time.Second)
+		// sleep a bit longer than timeout, a block should be produced by then
+		time.Sleep(150 * time.Millisecond)
 		mgr.shutdownBlockProducer <- true
 		// get tip after timeout
 		post := mgr.engine.BestBlock()
@@ -414,7 +414,7 @@ func TestPlatformManagerBlockProducerMultipleTransactions(t *testing.T) {
 		// get current tip from consensus engine
 		pre := mgr.engine.BestBlock()
 		// override timeout
-		maxTxWaitSec = 1 * time.Second
+		maxTxWaitSec = 100 * time.Millisecond
 		// start block producer
 		go mgr.blockProducer()
 		// submit multiple transactions transaction
@@ -423,8 +423,8 @@ func TestPlatformManagerBlockProducerMultipleTransactions(t *testing.T) {
 			txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
 			mgr.Submit(txPayload, txSubmitter)
 		}
-		// sleep 1 sec, one block should be produced by then
-		time.Sleep(1 * time.Second)
+		// sleep a bit, one block should be produced by then
+		time.Sleep(100 * time.Millisecond)
 		mgr.shutdownBlockProducer <- true
 		// get tip after timeout
 		post := mgr.engine.BestBlock()
@@ -452,7 +452,7 @@ func TestPlatformManagerBlockProducerMaxTransactionsPerBlock(t *testing.T) {
 		// get current tip from consensus engine
 		pre := mgr.engine.BestBlock()
 		// override timeout
-		maxTxWaitSec = 1 * time.Second
+		maxTxWaitSec = 100 * time.Millisecond
 		// start block producer
 		go mgr.blockProducer()
 		// submit multiple transactions transaction
@@ -461,8 +461,8 @@ func TestPlatformManagerBlockProducerMaxTransactionsPerBlock(t *testing.T) {
 			txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
 			mgr.Submit(txPayload, txSubmitter)
 		}
-		// sleep 1 sec, two block should be produced by then
-		time.Sleep(1 * time.Second)
+		// sleep a bit, two block should be produced by then
+		time.Sleep(100 * time.Millisecond)
 		mgr.shutdownBlockProducer <- true
 		// get tip after timeout
 		post := mgr.engine.BestBlock()
@@ -471,6 +471,67 @@ func TestPlatformManagerBlockProducerMaxTransactionsPerBlock(t *testing.T) {
 		}
 		if post.Depth().Uint64() != pre.Depth().Uint64()+2 {
 			t.Errorf("did not produce 2 blocks")
+		}
+	}
+}
+
+func TestPlatformManagerTransactionStatus(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	var block consensus.Block
+	conf := testNetworkConfig(func(tx *Transaction) bool{
+			block = tx.block
+			return true
+		}, nil, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		// override timeout
+		maxTxWaitSec = 100 * time.Millisecond
+		// start block producer
+		go mgr.blockProducer()
+		// submit transaction
+		txPayload := []byte("test tx payload")
+		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
+		txId := mgr.Submit(txPayload, txSubmitter)
+		// sleep 1 sec, hoping transaction will get processed till then
+		time.Sleep(100 * time.Millisecond)
+		mgr.shutdownBlockProducer <- true
+		// query status of the transaction
+		if txBlock, err := mgr.Status(txId); err != nil {
+			t.Errorf("Failed to get transaction status: %s", err)
+		} else if *txBlock.Hash() != *block.Hash() {
+			t.Errorf("submitted transaction's block incorrect: %s", err)
+		}
+	}
+}
+
+func TestPlatformManagerUnknownTransactionStatus(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	conf := testNetworkConfig(func(tx *Transaction) bool{
+			return true
+		}, nil, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		// override timeout
+		maxTxWaitSec = 100 * time.Millisecond
+		// start block producer
+		go mgr.blockProducer()
+		// submit transaction
+		txPayload := []byte("test tx payload")
+		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
+		mgr.Submit(txPayload, txSubmitter)
+		txId := core.BytesToByte64([]byte("some random transaction Id"))
+		// sleep 1 sec, hoping transaction will get processed till then
+		time.Sleep(100 * time.Millisecond)
+		mgr.shutdownBlockProducer <- true
+		// query status of the transaction
+		if _, err := mgr.Status(txId); err == nil || err.(*core.CoreError).Code() != consensus.ERR_TX_NOT_FOUND {
+			t.Errorf("Failed to detect unknown transaction")
 		}
 	}
 }

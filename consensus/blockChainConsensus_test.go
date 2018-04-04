@@ -218,7 +218,7 @@ func TestTransactionStatus(t *testing.T) {
 
 	// now query for the transaction
 	var b Block
-	if b,err = c.TransactionStatus(tx); err != nil {
+	if b,err = c.TransactionStatus(tx.Id()); err != nil {
 		t.Errorf("failed to get transaction status: %s", err)
 		return
 	}
@@ -246,7 +246,7 @@ func TestTransactionStatusNotCanonicalChain(t *testing.T) {
 	addBlock(block, c)
 
 	// query for transaction, now it should be registered with new block
-	if b,err := c.TransactionStatus(tx); err != nil {
+	if b,err := c.TransactionStatus(tx.Id()); err != nil {
 		t.Errorf("failed to get transaction status: %s", err)
 		return
 	} else if *b.Hash() != *block.Hash() {
@@ -259,7 +259,7 @@ func TestTransactionStatusNotCanonicalChain(t *testing.T) {
 	c.putChainNode(blockNode)
 
 	// query for transaction, this time block should not show as registered
-	if _,err := c.TransactionStatus(tx); err == nil {
+	if _,err := c.TransactionStatus(tx.Id()); err == nil {
 		t.Errorf("failed to mark transaction unregistered for non canonical chain block")
 	}
 }
@@ -333,7 +333,7 @@ func TestTransactionStatusAfterRebalance(t *testing.T) {
 	c.state.RegisterTransaction(tx.Id(), parent.Hash())
 	// query for transaction, it should be registered with parent block
 	var b Block
-	if b,err = c.TransactionStatus(tx); err != nil {
+	if b,err = c.TransactionStatus(tx.Id()); err != nil {
 		t.Errorf("failed to get transaction status: %s", err)
 		return
 	}
@@ -361,7 +361,7 @@ func TestTransactionStatusAfterRebalance(t *testing.T) {
 	}
 
 	// query for transaction, now it should be registered with new child block
-	if b,err = c.TransactionStatus(tx); err == nil || err.(*core.CoreError).Code() != ERR_TX_NOT_APPLIED {
+	if b,err = c.TransactionStatus(tx.Id()); err == nil || err.(*core.CoreError).Code() != ERR_TX_NOT_APPLIED {
 		t.Errorf("failed to get invalid transaction status: %s", err)
 		return
 	}

@@ -186,6 +186,10 @@ func (mgr *platformManager) validateAndAdd(handshake *HandshakeMsg, peer PeerNod
 	return nil
 }
 
+func (mgr *platformManager) Status(txId *core.Byte64) (consensus.Block, error) {
+	return mgr.engine.TransactionStatus(txId)
+}
+
 func (mgr *platformManager) Submit(txPayload []byte, submitter *core.Byte64) *core.Byte64 {
 	// create an instance of transaction
 	tx := consensus.NewTransaction(txPayload, submitter)

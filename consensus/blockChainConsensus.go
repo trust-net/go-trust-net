@@ -281,18 +281,18 @@ func (c *BlockChainConsensus) mineCandidateBlock(child *block, cb MiningResultHa
 }
 
 // query status of a transaction (its block details) in the canonical chain
-func (c *BlockChainConsensus) TransactionStatus(tx *Transaction) (Block, error) {
+func (c *BlockChainConsensus) TransactionStatus(txId *core.Byte64) (Block, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 //	return c.transactionStatus(tx)
-	block,_, err := c.transactionStatus(tx)
+	block,_, err := c.transactionStatus(txId)
 	return block, err
 }
 
-func (c *BlockChainConsensus) transactionStatus(tx *Transaction) (Block, *chainNode, error) {
+func (c *BlockChainConsensus) transactionStatus(txId *core.Byte64) (Block, *chainNode, error) {
 	// lookup transaction in the current canonical chain
-	if hash, err := c.state.HasTransaction(tx.Id()); err != nil {
-		c.logger.Debug("Transaction does not exists: %x", *tx.Id())
+	if hash, err := c.state.HasTransaction(txId); err != nil {
+		c.logger.Debug("Transaction does not exists: %x", *txId)
 		return nil, nil, core.NewCoreError(ERR_TX_NOT_FOUND, "transaction not found")
 	} else 
 	// verify if the block is on canonical chain
@@ -300,7 +300,7 @@ func (c *BlockChainConsensus) transactionStatus(tx *Transaction) (Block, *chainN
 		c.logger.Error("Failed to get chain node for transaction: %s", err)
 		return nil, nil, core.NewCoreError(ERR_DB_CORRUPTED, "error reading transaction's chain node")
 	} else if !node.isMainList() {
-		c.logger.Debug("Transaction not on canonical chain: %x", *tx.Id())
+		c.logger.Debug("Transaction not on canonical chain: %x", *txId)
 		return nil, node, core.NewCoreError(ERR_TX_NOT_APPLIED, "transaction not on canonical chain")
 	} else
 	// find the block that finalized the transaction
@@ -518,7 +518,7 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 	// verify that block is not introducing a duplicate transactions in the canonical chain
 	for _, tx := range child.Transactions() {
 		c.logger.Debug("Checking pre-existing transaction: %x", *tx.Id())
-		if b, n, _ := c.transactionStatus(&tx);  b != nil && n != nil &&
+		if b, n, _ := c.transactionStatus(tx.Id());  b != nil && n != nil &&
 			(n.isMainList() ||
 				(b.Weight().Uint64() > child.Weight().Uint64() ||
 					(b.Weight().Uint64() == child.Weight().Uint64() && b.Numeric() < child.Numeric()))) {

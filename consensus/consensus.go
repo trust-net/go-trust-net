@@ -23,7 +23,7 @@ type Consensus interface {
 	// or error if mining failed/aborted
 	MineCandidateBlock(b Block, cb MiningResultHandler)
 	// query status of a transaction (its block details) in the canonical chain
-	TransactionStatus(tx *Transaction) (Block, error)
+	TransactionStatus(txId *core.Byte64) (Block, error)
 	// deserialize data into network block, and will initialize the block with current canonical parent's
 	// world state root (application is responsible to run the transactions from block, and update
 	// world state appropriately)
