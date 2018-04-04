@@ -535,3 +535,34 @@ func TestPlatformManagerUnknownTransactionStatus(t *testing.T) {
 		}
 	}
 }
+
+func TestPlatformManagerRejectedTransactionStatus(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	conf := testNetworkConfig(func(tx *Transaction) bool{
+			return false
+		}, nil, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		log.SetLogLevel(log.DEBUG)
+		// override timeout
+		maxTxWaitSec = 100 * time.Millisecond
+		// start block producer
+		go mgr.blockProducer()
+		// submit transaction
+		txPayload := []byte("test tx payload")
+		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
+		txId := mgr.Submit(txPayload, txSubmitter)
+		// sleep 1 sec, hoping transaction will get processed till then
+		time.Sleep(100 * time.Millisecond)
+		mgr.shutdownBlockProducer <- true
+		// query status of the transaction
+		if txBlock, err := mgr.Status(txId); err == nil || err.(*core.CoreError).Code() != consensus.ERR_TX_NOT_APPLIED {
+			t.Errorf("Failed to detect rejected transaction")
+		} else if txBlock != nil {
+			t.Errorf("rejected transaction should have nil block")
+		}
+	}
+}

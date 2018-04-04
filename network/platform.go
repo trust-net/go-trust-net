@@ -51,6 +51,7 @@ type platformManager struct {
 	txQ chan *consensus.Transaction
 	shutdownBlockProducer chan bool
 	peerDb db.PeerSetDb
+	deadTxs map[core.Byte64]bool
 	peerCount	int
 }
 
@@ -74,6 +75,7 @@ func NewPlatformManager(appConfig *AppConfig, srvConfig *ServiceConfig, appDb db
 		txQ: make(chan *consensus.Transaction, txQueueSize),
 		shutdownBlockProducer: make(chan bool),
 		peerDb: db.NewPeerSetDbInMemory(),
+		deadTxs: make(map[core.Byte64]bool),
 	}
 	// TODO: change blockchain intialization to use genesis block header as parameters instead of hard coded genesis time
     if engine, err := consensus.NewBlockChainConsensus(genesisTimeStamp, &mgr.config.MinerId, appDb); err != nil {
@@ -187,7 +189,13 @@ func (mgr *platformManager) validateAndAdd(handshake *HandshakeMsg, peer PeerNod
 }
 
 func (mgr *platformManager) Status(txId *core.Byte64) (consensus.Block, error) {
-	return mgr.engine.TransactionStatus(txId)
+	if found, _ := mgr.deadTxs[*txId]; found {
+		// forget about this tx, to save memory
+		delete(mgr.deadTxs, *txId)
+		return nil, core.NewCoreError(consensus.ERR_TX_NOT_APPLIED, "transaction rejected")
+	} else {
+		return mgr.engine.TransactionStatus(txId)
+	}
 }
 
 func (mgr *platformManager) Submit(txPayload []byte, submitter *core.Byte64) *core.Byte64 {
@@ -246,7 +254,13 @@ func (mgr *platformManager) blockProducer() {
 						mgr.logger.Debug("reached maximum transactions for current block")
 						wait.Reset(maxTxWaitSec*10)
 //						go mgr.mineCandidateBlock(newBlock)
-						mgr.mineCandidateBlock(newBlock)
+						if !mgr.mineCandidateBlock(newBlock) {
+							mgr.logger.Debug("block failed to mine: %x", *newBlock.Hash())
+							// add all transactions of the block to dead list
+							for _,tx := range newBlock.Transactions() {
+								mgr.deadTxs[*tx.Id()] = true
+							}
+						}
 						newBlock = mgr.engine.NewCandidateBlock()
 						txCount = 0
 						wait.Reset(maxTxWaitSec)
@@ -254,12 +268,21 @@ func (mgr *platformManager) blockProducer() {
 						// we got at least one transaction, so no need to wait
 						wait.Reset(50 * time.Millisecond)
 					}
+				} else {
+					mgr.logger.Debug("application rejected transaction: %x", *tx.Id())
+					mgr.deadTxs[*tx.Id()] = true
 				}
 			case <- wait.C:
 				mgr.logger.Debug("timed out waiting for transactions")
 				wait.Reset(maxTxWaitSec*10)
 //				go mgr.mineCandidateBlock(newBlock)
-				mgr.mineCandidateBlock(newBlock)
+				if !mgr.mineCandidateBlock(newBlock) {
+					mgr.logger.Debug("block failed to mine: %x", *newBlock.Hash())
+					// add all transactions of the block to dead list
+					for _,tx := range newBlock.Transactions() {
+						mgr.deadTxs[*tx.Id()] = true
+					}
+				}
 				newBlock = mgr.engine.NewCandidateBlock()
 				txCount = 0
 				wait.Reset(maxTxWaitSec)
