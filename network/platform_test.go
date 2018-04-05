@@ -3,6 +3,7 @@ package network
 import (
     "testing"
     "time"
+    "fmt"
 	"github.com/trust-net/go-trust-net/db"
 	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/consensus"
@@ -14,15 +15,103 @@ func TestNewPlatformManagerNullArgs(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
-	if _, err := NewPlatformManager(nil, &ServiceConfig{}, db); err == nil {
+	if _, err := NewPlatformManager(nil, testServiceConfig(), db); err == nil {
+		t.Errorf("did not detect nil app config")
+	}
+	srvConf := testServiceConfig()
+	srvConf.TxProcessor = nil
+	if _, err := NewPlatformManager(nil, srvConf, db); err == nil {
+		t.Errorf("did not detect missing mandatory callback TxProcessor")
+	}
+	srvConf = testServiceConfig()
+	srvConf.PeerValidator = nil
+	if _, err := NewPlatformManager(nil, srvConf, db); err == nil {
+		t.Errorf("did not detect missing mandatory callback PeerValidator")
+	}
+	if _, err := NewPlatformManager(nil, testServiceConfig(), db); err == nil {
 		t.Errorf("did not detect nil app config")
 	}
 	if _, err := NewPlatformManager(&AppConfig{}, nil, db); err == nil {
 		t.Errorf("did not detect nil service config")
 	}
-	if _, err := NewPlatformManager(&AppConfig{}, &ServiceConfig{}, nil); err == nil {
+	if _, err := NewPlatformManager(&AppConfig{}, testServiceConfig(), nil); err == nil {
 		t.Errorf("did not detect nil app DB")
 	}	
+}
+
+func TestNewPlatformManagerInterface(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	conf := testNetworkConfig(nil, nil, nil)
+	var mgr PlatformManager
+	var err error
+	if mgr, err = NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	}
+	if err = mgr.Start(); err != nil {
+		t.Errorf("Failed to start platform manager: %s", err)
+	}
+	// submit transaction
+	txPayload := []byte("test tx payload")
+	txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
+	txId := mgr.Submit(txPayload, txSubmitter)
+	// sleep for some time, for transaction to be processed
+	time.Sleep(100 * time.Millisecond)
+	if _, err = mgr.Status(txId); err != nil {
+		t.Errorf("Failed to get submitted transaction status: %s", err)
+	}
+	if err = mgr.Stop(); err != nil {
+		t.Errorf("Failed to stop platform manager: %s", err)
+	}
+}
+
+func testTwoApps(t *testing.T) {
+	log.SetLogLevel(log.DEBUG)
+	defer log.SetLogLevel(log.NONE)
+	db1, _ := db.NewDatabaseInMem()
+	db2, _ := db.NewDatabaseInMem()
+	conf1 := testNetworkConfig(nil, nil, nil)
+	conf2 := testNetworkConfig(nil, nil, nil)
+	var mgr1 PlatformManager
+	var mgr2 PlatformManager
+	var err error
+	if mgr1, err = NewPlatformManager(&conf1.AppConfig, &conf1.ServiceConfig, db1); err != nil {
+		t.Errorf("Failed to create platform manager 1: %s", err)
+	}
+	if err = mgr1.Start(); err != nil {
+		t.Errorf("Failed to start platform manager 1: %s", err)
+	}
+	// wire 1st app as boot node into 2nd app
+	app := mgr1.(*platformManager)
+	appId := fmt.Sprintf("enode://%x@192.168.1.114:%d", *app.config.minerId, app.srv.NodeInfo().Ports.Discovery)
+	fmt.Printf("App: '%s'\n", appId)
+	conf2.BootstrapNodes = []string{appId}
+	if mgr2, err = NewPlatformManager(&conf2.AppConfig, &conf2.ServiceConfig, db2); err != nil {
+		t.Errorf("Failed to create platform manager 2: %s", err)
+	}
+	if err = mgr2.Start(); err != nil {
+		t.Errorf("Failed to start platform manager 2: %s", err)
+	}
+//	// connect the two apps
+//	mgr2.(*platformManager).srv.AddPeer(mgr1.(*platformManager).srv.Self())
+	// sleep for some time, for peers to connect
+	time.Sleep(1000 * time.Millisecond)
+	// submit transaction to mgr1
+	txPayload := []byte("test tx payload")
+	txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
+	txId := mgr1.Submit(txPayload, txSubmitter)
+	// sleep for some time, for transaction to be processed
+	time.Sleep(1000 * time.Millisecond)
+	if _, err = mgr2.Status(txId); err != nil {
+		t.Errorf("Failed to get transaction updated on mgr 2: %s", err)
+	}
+	if err = mgr1.Stop(); err != nil {
+		t.Errorf("Failed to stop platform manager 1: %s", err)
+	}
+	if err = mgr2.Stop(); err != nil {
+		t.Errorf("Failed to stop platform manager 2: %s", err)
+	}
 }
 
 func TestNewPlatformManagerGoodArgs(t *testing.T) {
@@ -160,7 +249,7 @@ func TestUnregisterPeer(t *testing.T) {
 			t.Errorf("Failed to validate peer handshake: %s", err)
 		}
 		// now disconnect peer
-		mgr.UnregisterPeer(peer)
+		mgr.unregisterPeer(peer)
 		if mgr.PeerCount() != 0 {
 			t.Errorf("did not decrement peer count")
 		}
@@ -191,7 +280,7 @@ func TestHandshakeMsgSendErr(t *testing.T) {
 				sendErr: core.NewCoreError(0x2100000, "test send error"),
 			},
 		}
-		if err := mgr.Handshake(handshake, peer); err == nil || err.(*core.CoreError).Code() != ErrorHandshakeFailed {
+		if err := mgr.handshake(handshake, peer); err == nil || err.(*core.CoreError).Code() != ErrorHandshakeFailed {
 			t.Errorf("Failed to detect handshake msg send error: %s", err)
 			return
 		}
@@ -220,7 +309,7 @@ func TestHandshakeMsgReadErr(t *testing.T) {
 				sendSucc: true,
 			},
 		}
-		if err := mgr.Handshake(handshake, peer); err == nil || err.(*core.CoreError).Code() != 0x2200000 {
+		if err := mgr.handshake(handshake, peer); err == nil || err.(*core.CoreError).Code() != 0x2200000 {
 			t.Errorf("Failed to detect handshake msg read error: %s", err)
 			return
 		}
@@ -254,7 +343,7 @@ func TestHandshakeWrongMsg(t *testing.T) {
 				sendSucc: true,
 			},
 		}
-		if err := mgr.Handshake(handshake, peer); err == nil || err.(*core.CoreError).Code() != ErrorHandshakeFailed {
+		if err := mgr.handshake(handshake, peer); err == nil || err.(*core.CoreError).Code() != ErrorHandshakeFailed {
 			t.Errorf("Failed to detect incorrect message code: %s", err)
 			return
 		}
@@ -289,7 +378,7 @@ func TestHandshakeDecodeError(t *testing.T) {
 				sendSucc: true,
 			},
 		}
-		if err := mgr.Handshake(handshake, peer); err == nil || err.(*core.CoreError).Code() != ErrorHandshakeFailed {
+		if err := mgr.handshake(handshake, peer); err == nil || err.(*core.CoreError).Code() != ErrorHandshakeFailed {
 			t.Errorf("Failed to detect message decode error: %s", err)
 			return
 		}
@@ -576,7 +665,7 @@ func TestPlatformManagerPowCallback(t *testing.T) {
 	conf := testNetworkConfig(func(tx *Transaction) bool{
 			block = tx.block
 			return true
-		}, func(powHash []byte) bool {
+		}, func(powHash []byte, ts, delta uint64) bool {
 			called = true
 			hash = *core.BytesToByte64(powHash)
 			return true
@@ -615,7 +704,7 @@ func TestPlatformManagerPowTimeout(t *testing.T) {
 	conf := testNetworkConfig(func(tx *Transaction) bool{
 			block = tx.block
 			return true
-		}, func(powHash []byte) bool {
+		}, func(powHash []byte, ts, delta uint64) bool {
 			called = true
 			hash = core.BytesToByte64(powHash)
 			return false
@@ -623,18 +712,25 @@ func TestPlatformManagerPowTimeout(t *testing.T) {
 	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
 		t.Errorf("Failed to create platform manager: %s", err)
 	} else {
-		log.SetLogLevel(log.DEBUG)
-		// override timeout
-//		maxTxWaitSec = 100 * time.Millisecond
 		// start block producer
 		go mgr.blockProducer()
 		// submit transaction
 		txPayload := []byte("test tx payload")
 		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
 		txId := mgr.Submit(txPayload, txSubmitter)
-		// sleep a bit, hoping transaction will get processed till then
-		time.Sleep(100 * time.Millisecond)
+		finished := false
+		go func() {
+			fmt.Printf("Waiting for timeout .")
+			for !finished {
+				// sleep a bit, hoping transaction will get processed till then
+				time.Sleep(1000 * time.Millisecond)
+				fmt.Printf(".")
+			}
+			fmt.Printf("done!\n")
+		}()
+		time.Sleep(1000 * time.Millisecond)
 		mgr.shutdownBlockProducer <- true
+		finished = true
 		// query status of the transaction
 		if txBlock, err := mgr.Status(txId); err == nil || err.(*core.CoreError).Code() != consensus.ERR_TX_NOT_APPLIED {
 			t.Errorf("Failed to detect rejected transaction")

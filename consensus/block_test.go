@@ -3,6 +3,7 @@ package consensus
 import (
     "testing"
     "time"
+	"crypto/sha512"
 	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/common"
 	"github.com/trust-net/go-trust-net/db"
@@ -28,7 +29,7 @@ func TestNewBlockWithTime(t *testing.T) {
 	ws := trie.NewMptWorldState(db)
 	now := uint64(time.Now().UnixNano())
 	weight, depth := uint64(23), uint64(20)
-	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	b := newBlock(previous, weight, depth, now, now-1000, testMiner, ws)
 	if b.Timestamp().Uint64() != now {
 		t.Errorf("Block time stamp incorrect: Expected '%d', Found '%d'", now, b.Timestamp().Uint64())
 	}
@@ -37,10 +38,10 @@ func TestNewBlockWithTime(t *testing.T) {
 func TestNewBlockWithoutTime(t *testing.T) {
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
-	before := uint64(time.Now().UnixNano())
+	before := uint64(time.Now().Unix())
 	weight, depth := uint64(23), uint64(20)
-	b := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
-	after := uint64(time.Now().UnixNano())
+	b := newBlock(previous, weight, depth, uint64(0), before-10000,  testMiner, ws)
+	after := uint64(time.Now().Unix())
 	if b.Timestamp().Uint64() < before {
 		t.Errorf("Block time stamp incorrect: Expected > '%d', Found '%d'", before, b.Timestamp().Uint64())
 	}
@@ -52,7 +53,7 @@ func TestNewBlockWithoutTime(t *testing.T) {
 func TestBlockStateUpdate(t *testing.T) {
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
-	b := newBlock(previous, 0, 0, 0, testMiner, ws)
+	b := newBlock(previous, 0, 0, 0, 1000000, testMiner, ws)
 	// update some values in world state
 	b.Update([]byte("key"), []byte("value1"))
 	if value, err := b.Lookup([]byte("key")); err != nil {
@@ -65,7 +66,7 @@ func TestBlockStateUpdate(t *testing.T) {
 func TestBlockStateDelete(t *testing.T) {
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
-	b := newBlock(previous, 0, 0, 0, testMiner, ws)
+	b := newBlock(previous, 0, 0, 0, 1000000, testMiner, ws)
 	// update some values in world state
 	b.Update([]byte("key1"), []byte("value1"))
 	b.Update([]byte("key2"), []byte("value2"))
@@ -86,7 +87,7 @@ func TestBlockStateDelete(t *testing.T) {
 func TestNewBlockDefaultInitializations(t *testing.T) {
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
-	b := newBlock(previous, 0, 0, uint64(0), testMiner, ws)
+	b := newBlock(previous, 0, 0, uint64(0), 1000000, testMiner, ws)
 	if len(b.Transactions()) != 0 {
 		t.Errorf("Block transactions list not empty: Found '%d'", len(b.Transactions()))
 	}
@@ -108,7 +109,7 @@ func TestSerializeDeserializeOnTheWire(t *testing.T) {
 	weight, depth := uint64(23), uint64(20)
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
-	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	orig := newBlock(previous, weight, depth, uint64(0), 100000, testMiner, ws)
 	orig.hash = core.BytesToByte64([]byte("some random hash"))
 	orig.STATE = *core.BytesToByte64([]byte("some random state"))
 	var copy block
@@ -142,7 +143,7 @@ func TestComputeHash(t *testing.T) {
 	dbPre, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(dbPre)
 	ws.Update([]byte("key"), []byte("value"))
-	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	orig := newBlock(previous, weight, depth, uint64(0), 100000, testMiner, ws)
 	tx1 := testTransaction("transaction 1")
 	tx2 := testTransaction("transaction 2")
 	// put tx1 into DB simulating a different block entry
@@ -151,8 +152,29 @@ func TestComputeHash(t *testing.T) {
 	orig.AddTransaction(tx1)
 	orig.AddTransaction(tx2)
 	orig.addUncle(testUncle)
-	if hash := orig.computeHash(); hash == nil {
+	hash := orig.computeHash()
+	if hash == nil {
 		t.Errorf("Failed to compute hash")
+		return
+	}
+	data := make([]byte,0, 64+64+8+64+8+len(orig.TXs)*(8+64+1)+8+len(orig.UNCLEs)*64)
+	data = append(data, orig.PHASH.Bytes()...)
+	data = append(data, orig.MINER.Bytes()...)
+	data = append(data, orig.TS.Bytes()...)
+	data = append(data, orig.DELTA.Bytes()...)
+	state := orig.worldState.Hash()
+	data = append(data, (&state).Bytes()...)
+	for _, tx := range orig.TXs {
+		data = append(data, tx.Bytes()...)
+	}
+	data = append(data, orig.WT.Bytes()...)
+	for _, uncle := range orig.UNCLEs {
+		data = append(data, uncle.Bytes()...)
+	}
+	data = append(data, orig.NONCE.Bytes()...)
+	expectedHash := sha512.Sum512(data)
+	if expectedHash != *hash {
+		t.Errorf("computed hash incorrect")
 	}
 //	if hash, err := ws.HasTransaction(tx1.Id()); err != nil {
 //		t.Errorf("Compute hash did not update world state with transaction: %s", err)
@@ -171,13 +193,13 @@ func TestComputeHashPoW(t *testing.T) {
 	dbPre, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(dbPre)
 	ws.Update([]byte("key"), []byte("value"))
-	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	orig := newBlock(previous, weight, depth, uint64(0), 100000, testMiner, ws)
 	// add PoW approver
 	powCalled := false
 	approvals := []bool{false, false, true}
 	approvalCount := 0
 	var lastHash *core.Byte64
-	orig.pow = func(hash []byte) bool {
+	orig.pow = func(hash []byte, ts, delta uint64) bool {
 			powCalled = true
 			approvalCount++
 			lastHash = core.BytesToByte64(hash)
@@ -198,10 +220,10 @@ func TestComputeHashBusyLoop(t *testing.T) {
 	dbPre, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(dbPre)
 	ws.Update([]byte("key"), []byte("value"))
-	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	orig := newBlock(previous, weight, depth, uint64(0), 10000, testMiner, ws)
 	// add PoW approver
 	powCalled := false
-	orig.pow = func(hash []byte) bool {
+	orig.pow = func(hash []byte, ts, delta uint64) bool {
 		powCalled = true
 		return false
 	}
@@ -225,7 +247,7 @@ func TestNumericInvalidHash(t *testing.T) {
 	dbPre, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(dbPre)
 	ws.Update([]byte("key"), []byte("value"))
-	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	orig := newBlock(previous, weight, depth, uint64(0), 10000, testMiner, ws)
 	num := uint64(0)
 	if orig.Numeric() != num-1 {
 		t.Errorf("Incorrect numeric value for unhashed block: %d", orig.Numeric())
@@ -237,7 +259,7 @@ func TestNumericValidHash(t *testing.T) {
 	dbPre, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(dbPre)
 	ws.Update([]byte("key"), []byte("value"))
-	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	orig := newBlock(previous, weight, depth, uint64(0), 100000, testMiner, ws)
 	orig.computeHash()
 	num := uint64(0)
 	for _, b := range orig.hash.Bytes() {
@@ -253,7 +275,7 @@ func TestSerializeDeserialize(t *testing.T) {
 	dbPre, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(dbPre)
 	ws.Update([]byte("key"), []byte("value"))
-	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	orig := newBlock(previous, weight, depth, uint64(0), 10000, testMiner, ws)
 	tx1 := testTransaction("transaction 1")
 	tx2 := testTransaction("transaction 2")
 	orig.AddTransaction(tx1)
@@ -306,7 +328,7 @@ func TestSerializeDeserializeWorldStateComparison(t *testing.T) {
 	
 	// now build a new block starting from previous world state
 	weight, depth := uint64(23), uint64(20)	
-	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	orig := newBlock(previous, weight, depth, uint64(0), 10000, testMiner, ws)
 	orig.Update([]byte("key"), []byte("value2"))
 	tx2 := testTransaction("transaction 2")
 	orig.AddTransaction(tx2)
@@ -360,6 +382,8 @@ func (b *invalidType) Nonce() *core.Byte8 {return nil}
 
 func (b *invalidType) Timestamp() *core.Byte8 {return nil}
 
+func (b *invalidType) Delta() *core.Byte8 {return nil}
+
 func (b *invalidType) Depth() *core.Byte8 {return nil}
 
 func (b *invalidType) Weight() *core.Byte8 {return nil}
@@ -398,7 +422,7 @@ func TestSerializeUnHashed(t *testing.T) {
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
 	ws.Update([]byte("key"), []byte("value"))
-	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	orig := newBlock(previous, weight, depth, uint64(0), 0, testMiner, ws)
 	if _, err := serializeBlock(orig); err == nil {
 		t.Errorf("Serialization failed to detect unhashed block")
 	}
@@ -409,7 +433,7 @@ func TestSerializeInvalidState(t *testing.T) {
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
 	ws.Update([]byte("key"), []byte("value"))
-	orig := newBlock(previous, weight, depth, uint64(0), testMiner, ws)
+	orig := newBlock(previous, weight, depth, uint64(0), 0, testMiner, ws)
 	orig.computeHash()
 	orig.STATE = *core.BytesToByte64([]byte("some random state"))
 	if _, err := serializeBlock(orig); err == nil {
@@ -447,7 +471,7 @@ func TestTransactionAdd(t *testing.T) {
 	ws := trie.NewMptWorldState(db)
 	now := uint64(time.Now().UnixNano())
 	weight, depth := uint64(23), uint64(20)
-	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	b := newBlock(previous, weight, depth, now, now-10000, testMiner, ws)
 	if err := b.AddTransaction(testTransaction("transaction 1")); err != nil {
 		t.Errorf("failed to add transaction: %s", err)
 	}
@@ -465,7 +489,7 @@ func TestTransactionAddDuplicateTransaction(t *testing.T) {
 	ws := trie.NewMptWorldState(db)
 	now := uint64(time.Now().UnixNano())
 	weight, depth := uint64(23), uint64(20)
-	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	b := newBlock(previous, weight, depth, now, now-10000, testMiner, ws)
 	tx := testTransaction("test transaction")
 	// add transaction
 	b.AddTransaction(tx)
@@ -481,7 +505,7 @@ func TestTransactionAddExistingTransaction(t *testing.T) {
 	ws := trie.NewMptWorldState(db)
 	now := uint64(time.Now().UnixNano())
 	weight, depth := uint64(23), uint64(20)
-	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	b := newBlock(previous, weight, depth, now, now-10000, testMiner, ws)
 	tx := testTransaction("test transaction")
 	// populate DB with transaction
 	ws.RegisterTransaction(tx.Id(), core.BytesToByte64([]byte("some random block id")))
@@ -497,7 +521,7 @@ func TestUncleAdd(t *testing.T) {
 	ws := trie.NewMptWorldState(db)
 	now := uint64(time.Now().UnixNano())
 	weight, depth := uint64(23), uint64(20)
-	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	b := newBlock(previous, weight, depth, now, now-10000, testMiner, ws)
 	b.addUncle(testUncle)
 	if len(b.Uncles()) != 1 {
 		t.Errorf("Block uncle list incorrect: Expecting 1, Found '%d'", len(b.Uncles()))
@@ -514,7 +538,7 @@ func TestPersistState(t *testing.T) {
 	ws := trie.NewMptWorldState(db)
 	now := uint64(time.Now().UnixNano())
 	weight, depth := uint64(23), uint64(20)
-	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	b := newBlock(previous, weight, depth, now, now-10000, testMiner, ws)
 	// make some updates
 	b.Update([]byte("key1"), []byte("value1"))
 	ws.Update([]byte("key2"), []byte("value2"))
@@ -551,7 +575,7 @@ func TestRegisterTransactions(t *testing.T) {
 	ws := trie.NewMptWorldState(db)
 	now := uint64(time.Now().UnixNano())
 	weight, depth := uint64(23), uint64(20)
-	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	b := newBlock(previous, weight, depth, now, now-10000, testMiner, ws)
 	// add a transaction
 	tx := testTransaction("transaction 1")
 	b.AddTransaction(tx)
@@ -574,7 +598,7 @@ func TestClone(t *testing.T) {
 	now := uint64(time.Now().UnixNano())
 	weight, depth := uint64(23), uint64(20)
 	// prepare a block with state updates, transactions and uncles
-	b := newBlock(previous, weight, depth, now, testMiner, ws)
+	b := newBlock(previous, weight, depth, now, now-10000, testMiner, ws)
 	b.hash = core.BytesToByte64([]byte("some random hash"))
 	b.addUncle(testUncle)
 	b.Update([]byte("key"), []byte("value"))

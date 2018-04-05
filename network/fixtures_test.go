@@ -3,6 +3,7 @@ package network
 import (
 	"github.com/trust-net/go-trust-net/core"
 	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 
@@ -58,11 +59,19 @@ func (node *mockNode) ReadMsg() (p2p.Msg, error) {
 }
 
 func testNetworkConfig(processor TxProcessor, approver PowApprover, validator PeerValidator) *PlatformConfig {
+	if processor == nil {
+		processor = testDefaultTxApprover
+	}
+	if validator == nil {
+		validator = testDefaultPeerValidator
+	}
+	nodekey, _ := crypto.GenerateKey()
 	conf := PlatformConfig {
 		AppConfig: AppConfig {
 			NetworkId: testNetwork,
 		},
 		ServiceConfig: ServiceConfig{
+			IdentityKey: nodekey,
 			TxProcessor: processor,
 			PowApprover: approver,
 			PeerValidator: validator,
@@ -74,8 +83,32 @@ func testNetworkConfig(processor TxProcessor, approver PowApprover, validator Pe
 func testPeerHandshakeMsg(myConf *PlatformConfig) *HandshakeMsg {
 	msg := &HandshakeMsg{
 		NetworkId: myConf.NetworkId,
-		Genesis: myConf.genesis,
+		Genesis: *myConf.genesis,
 		ProtocolId: myConf.ProtocolId,		
 	}
 	return msg
+}
+
+func testDefaultTxApprover(txs *Transaction) bool {return true}
+
+func testDefaultPeerValidator(config *AppConfig) error {return nil}
+
+func testServiceConfig() *ServiceConfig {
+	nodekey, _ := crypto.GenerateKey()
+	return &ServiceConfig{
+		IdentityKey: nodekey,
+		// port for application to listen
+		Port: "",
+		// NAT traversal preference
+		Nat: false,
+		// application callback to process transactions
+		// (required)
+		TxProcessor: testDefaultTxApprover,
+		// application callback to approve PoW condition
+		// (optional: set to nil, if no PoW required)
+		PowApprover: nil,
+		// application callback to validate peer application
+		// (required)
+		PeerValidator: testDefaultPeerValidator,
+	}
 }

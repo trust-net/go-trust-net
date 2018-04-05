@@ -9,7 +9,10 @@ import (
 // block instance is provided (to update nodeset with hash), if successful, or error is provided if failed/aborted
 type MiningResultHandler func(block Block, err error)
 // a callback provided by application to approve PoW
-type PowApprover	func([]byte) bool
+// (arguments include block's timestamp and delta time since parent block,
+// so that application can implement variable PoW schemes based on time when
+// block was generated and time since its parent)
+type PowApprover	func(hash []byte, ts, delta uint64) bool
 
 // a consensus platform interface
 type Consensus interface {

@@ -164,7 +164,8 @@ func TestErrorNewBlockChainConsensusPutBlockError(t *testing.T) {
 	// verify that blockchain reports error when cannot save block 
 	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
 	// override chain db to a mock and return error
-	block := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	block := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	err = c.putBlock(block)
 	if err == nil || err.(*core.CoreError).Code() != ERR_BLOCK_UNHASHED {
 		t.Errorf("failed to report error when cannot put block into db: %s", err)
@@ -232,7 +233,7 @@ func TestErrorDeserializeNetworkBlockNoParent(t *testing.T) {
 		return
 	}
 	// build a new block that does not have its parent in the chain
-	child := newBlock(core.BytesToByte64([]byte("some random parent")), 100, 100, uint64(time.Now().UnixNano()), testNode, c.state)
+	child := newBlock(core.BytesToByte64([]byte("some random parent")), 100, 100, uint64(time.Now().UnixNano()), 100000, testNode, c.state)
 	child.computeHash()
 	data,_ := serializeBlock(child)
 	if _, err = c.DeserializeNetworkBlock(data); err == nil || err.(*core.CoreError).Code() != ERR_BLOCK_ORPHAN {
@@ -249,7 +250,8 @@ func TestErrorDeserializeNetworkBlockIncorrectDepth(t *testing.T) {
 		return
 	}
 	// build a new block as current tip's child, but incorrect depth
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 100, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 100, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.computeHash()
 	data,_ := serializeBlock(child)
 	if _, err = c.DeserializeNetworkBlock(data); err == nil {
@@ -266,7 +268,8 @@ func TestErrorDeserializeNetworkBlockIncorrectWeight(t *testing.T) {
 		return
 	}
 	// build a new block as current tip's child, but incorrect weight
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64(), c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64(), c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.computeHash()
 	data,_ := serializeBlock(child)
 	if _, err = c.DeserializeNetworkBlock(data); err == nil {
@@ -284,7 +287,8 @@ func TestErrorDeserializeNetworkBlockIncorrectUncle(t *testing.T) {
 		return
 	}
 	// build a new block as current tip's child, but incorrect uncle
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64()+1+1, c.Tip().Depth().Uint64()+1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64()+1+1, c.Tip().Depth().Uint64()+1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.UNCLEs = append(child.UNCLEs, *core.BytesToByte64([]byte("invalid uncle")))
 	child.computeHash()
 	data,_ := serializeBlock(child)
@@ -303,14 +307,10 @@ func TestErrorAcceptNetworkBlockIncorrectState(t *testing.T) {
 		return
 	}
 	// build a new block to simulate current tip's child
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.computeHash()
 	var b Block
-//	data,_ := serializeBlock(child)
-//	if b, err = c.DeserializeNetworkBlock(data); err != nil {
-//		t.Errorf("failed to deserialize block: %s", err)
-//		return
-//	}
 	if b, err = c.DecodeNetworkBlockSpec(child.Spec()); err != nil {
 		t.Errorf("failed to decode block spec: %s", err)
 		return
@@ -335,7 +335,7 @@ func TestErrorAcceptNetworkBlockNoParent(t *testing.T) {
 		return
 	}
 	// build a new block that does not have its parent in the chain
-	child := newBlock(core.BytesToByte64([]byte("some random parent")), 100, 100, uint64(time.Now().UnixNano()), testNode, c.state)
+	child := newBlock(core.BytesToByte64([]byte("some random parent")), 100, 100, uint64(time.Now().UnixNano()), 10000, testNode, c.state)
 	child.computeHash()
 	if err = c.AcceptNetworkBlock(child); err == nil || err.(*core.CoreError).Code() != ERR_BLOCK_ORPHAN {
 		t.Errorf("failed to detect orphan network block")

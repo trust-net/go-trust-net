@@ -8,40 +8,58 @@ import (
 
 type AppConfig struct {
 	// identified application's shard/group on public p2p network
-	NetworkId	core.Byte16
+	NetworkId core.Byte16
 	// peer's node ID, extracted from p2p connection request
-	MinerId		core.Byte64
+	NodeId string
 	// name of the node
 	NodeName string
-	// application's protocol
+	// application's protocol ID
 	ProtocolId	core.Byte16	
 //	// application's authentication/authorization token
 //	AuthToken	core.Byte64
 }
 
+// a callback provided by application to process submitted transactions for inclusion into a new block
 type TxProcessor	func(txs *Transaction) bool
-type PowApprover	func(hash []byte) bool
+// a callback provided by application to approve PoW
+// (arguments include block's timestamp and delta time since parent block,
+// so that application can implement variable PoW schemes based on time when
+// block was generated and time since its parent)
+type PowApprover	func(hash []byte, blockTs, parentTs uint64) bool
+// a callback provided by application to validate a peer application connection
 type PeerValidator func(config *AppConfig) error
 
 type ServiceConfig struct {
 	// application's identity ECDSA key
+	// (required)
 	IdentityKey *ecdsa.PrivateKey
 	// port for application to listen
 	Port string
 	// NAT traversal preference
 	Nat bool
+	// appication's protocol name
+	ProtocolName string
+	// appication's protocol version
+	ProtocolVersion uint
+	// list of bootstrap nodes
+	BootstrapNodes []string
 	// application callback to process transactions
+	// (required)
 	TxProcessor	TxProcessor
 	// application callback to approve PoW condition
+	// (optional: set to nil, if no PoW required)
 	PowApprover	PowApprover
 	// application callback to validate peer application
+	// (required)
 	PeerValidator PeerValidator
 }
 type PlatformConfig struct {
 	AppConfig
 	ServiceConfig
 	// genesis ID for the shard/group
-	genesis core.Byte64
+	genesis *core.Byte64
+	// miner ID for mining reward, extracted from p2p server
+	minerId *core.Byte64
 }
 
 type Transaction struct {

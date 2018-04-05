@@ -54,7 +54,7 @@ func NewBlockChainConsensus(genesisTime uint64,
 	chain.logger = log.NewLogger(chain)
 
 	// genesis is statically defined using default values
-	genesisBlock := newBlock(genesisParent, 0, 0, genesisTime, core.BytesToByte64(nil), chain.state)
+	genesisBlock := newBlock(genesisParent, 0, 0, genesisTime, 0, core.BytesToByte64(nil), chain.state)
 	genesisBlock.computeHash()
 	chain.genesisNode = newChainNode(genesisBlock)
 	chain.genesisNode.setMainList(true)
@@ -176,7 +176,8 @@ func (c *BlockChainConsensus) NewCandidateBlock() Block {
 	}
 	
 	// create a new candidate block instance initialized as child of current canonical chain tip
-	b := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, state)
+	ts := uint64(time.Now().UnixNano())
+	b := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, state)
 
 	// add mining reward for miner node in this block's world view
 	// TODO
@@ -283,7 +284,7 @@ func (c *BlockChainConsensus) mineCandidateBlock(child *block, cb MiningResultHa
 		}
 		// return raw block, so that protocol layer can update "seen" node set with hash of the block
 		cb(child, nil)
-		c.logger.Debug("%s: Successfully mined block: %x", *c.minerId, *child.Hash())
+		c.logger.Debug("Successfully mined block: %x", *child.Hash())
 	}
 }
 
@@ -405,8 +406,6 @@ func (c *BlockChainConsensus) validateBlock(b Block) (*block, error) {
 func (c *BlockChainConsensus) DeserializeNetworkBlock(data []byte) (Block, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
-//	var block, parent *block
-//	var err error
 	if block, err := deSerializeBlock(data); err != nil {
 		c.logger.Error("failed to deserialize network block's data: %s", err.Error())
 		return nil, err
@@ -414,21 +413,6 @@ func (c *BlockChainConsensus) DeserializeNetworkBlock(data []byte) (Block, error
 		// process the block
 		return c.processNetworkBlock(block)
 	}
-//	// set the network flag on block
-//	block.isNetworkBlock = true
-//
-//	// validate block
-//	if parent, err = c.validateBlock(block); err != nil {
-//		return nil, err
-//	}
-//	// initialze block's world state to parent's world state
-//	state := trie.NewMptWorldState(c.db)
-//	if err = state.Rebase(parent.STATE); err != nil {
-//		c.logger.Error("failed to initialize network block's world state: %s", err.Error())
-//		return nil, core.NewCoreError(ERR_STATE_INCORRECT, "cannot initialize state")
-//	}
-//	block.worldState = state
-//	return block, nil
 }
 
 func (c *BlockChainConsensus) DecodeNetworkBlock(msg p2p.Msg) (Block, error) {
@@ -453,6 +437,7 @@ func (c *BlockChainConsensus) DecodeNetworkBlockSpec(spec BlockSpec) (Block, err
 			STATE: spec.STATE,
 			TXs: make([]Transaction, len(spec.TXs)),
 			TS: spec.TS,
+			DELTA: spec.DELTA,
 			DEPTH: spec.DEPTH,
 			WT: spec.WT,
 			UNCLEs: make([]core.Byte64, len(spec.UNCLEs)),

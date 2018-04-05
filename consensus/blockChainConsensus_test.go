@@ -18,7 +18,7 @@ var testNode = core.BytesToByte64([]byte("a test node"))
 
 func init() {
 	db, _ := db.NewDatabaseInMem()
-	genesis := newBlock(core.BytesToByte64(nil), 0, 0, genesisTime, core.BytesToByte64(nil), trie.NewMptWorldState(db))
+	genesis := newBlock(core.BytesToByte64(nil), 0, 0, genesisTime, 0, core.BytesToByte64(nil), trie.NewMptWorldState(db))
 	genesisHash = genesis.computeHash()
 }
 
@@ -62,7 +62,8 @@ func TestNewBlockChainConsensusFromTip(t *testing.T) {
 		return
 	}
 	// move the tip to a new block
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	tip := child.computeHash()
 	if err := db.Put(dagTip, tip.Bytes()); err != nil {
 			t.Errorf("failed to save new DAG tip: %s", err)
@@ -172,7 +173,7 @@ func TestMineCandidateBlockPoW(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	done := make(chan struct{})
 	powCalled := false
-	c.MineCandidateBlockPoW(child, func(hash []byte) bool {
+	c.MineCandidateBlockPoW(child, func(hash []byte, ts, delta uint64) bool {
 			powCalled = true
 			return true
 		},func(b Block, err error) {
@@ -391,7 +392,8 @@ func TestTransactionStatusAfterRebalance(t *testing.T) {
 	}
 
 	// build a new block simulating uncle's child and parent's nephew
-	child := newBlock(uncle.Hash(), uncle.Weight().Uint64() + 1 + 1, uncle.Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, uncle.(*block).worldState)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(uncle.Hash(), uncle.Weight().Uint64() + 1 + 1, uncle.Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, uncle.(*block).worldState)
 	child.UNCLEs = append(child.UNCLEs, *parent.Hash())
 
 	// try adding same transaction (duplicate) to the child block
@@ -421,7 +423,8 @@ func TestDeserializeNetworkBlock(t *testing.T) {
 		return
 	}
 	// build a new block to simulate current tip's child
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.computeHash()
 	data,_ := serializeBlock(child)
 	var b Block
@@ -451,19 +454,22 @@ func TestDeserializeNetworkBlockWithUncle(t *testing.T) {
 		return
 	}
 	// add an uncle block to blockchain
-	uncle := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	uncle := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	uncle.computeHash()
 	c.putBlock(uncle)
 	c.putChainNode(newChainNode(uncle))
 
 	// build a parent block to blockchain
-	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts = uint64(time.Now().UnixNano())
+	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	parent.computeHash()
 	c.putBlock(parent)
 	c.putChainNode(newChainNode(parent))
 
 	// build a new block simulating parent's child and uncle's nephew
-	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts = uint64(time.Now().UnixNano())
+	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.UNCLEs = append(child.UNCLEs, *uncle.Hash())
 	child.computeHash()
 	data,_ := serializeBlock(child)
@@ -490,7 +496,8 @@ func TestAcceptNetworkBlock(t *testing.T) {
 		return
 	}
 	// build a new block to simulate current tip's child
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.computeHash()
 	data,_ := serializeBlock(child)
 	var b Block
@@ -522,7 +529,8 @@ func TestAcceptNetworkBlockDuplicate(t *testing.T) {
 		return
 	}
 	// build a new block to simulate current tip's child
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.computeHash()
 	data,_ := serializeBlock(child)
 	var b Block
@@ -560,7 +568,7 @@ func makeBlocks(len int, parent *block, c *BlockChainConsensus) []Block {
 	for i := uint64(0); i < uint64(len); i++ {
 		state := trie.NewMptWorldState(c.db)
 		state.Rebase(parent.worldState.Hash())
-		child := newBlock(parent.Hash(), parent.Weight().Uint64()+1, parent.Depth().Uint64()+1, 0, testMiner, state)
+		child := newBlock(parent.Hash(), parent.Weight().Uint64()+1, parent.Depth().Uint64()+1, 0, parent.Timestamp().Uint64(), testMiner, state)
 		child.computeHash()
 		nodes[i] = child
 		parent = child
@@ -598,6 +606,8 @@ func TestBlockChainConsensusHeaviestChain(t *testing.T) {
 	if err := addChain(c, chain1); err != nil {
 		t.Errorf("1st chain failed to add block: %s", err)
 	}
+	// wait 1 sec, so that 2nd chain can have different timestamp
+	time.Sleep(time.Second * 1)
 	// now add 2nd chain with 4 blocks after the ancestor	
 	chain2 := makeBlocks(4, ancestor.(*block), c)
 	log.SetLogLevel(log.NONE)
@@ -936,13 +946,15 @@ func extendChainWithUncle(c *BlockChainConsensus, t *testing.T) (*block, *block)
 	ancestor = c.BestBlock()
 
 	// add an uncle block to blockchain
-	uncle := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	uncle := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	uncle.computeHash()
 	c.putBlock(uncle)
 	c.putChainNode(newChainNode(uncle))
 
 	// build a parent block to blockchain
-	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts = uint64(time.Now().UnixNano())
+	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	parent.computeHash()
 	c.putBlock(parent)
 
@@ -956,7 +968,8 @@ func extendChainWithUncle(c *BlockChainConsensus, t *testing.T) (*block, *block)
 	c.putChainNode(ancestorNode)
 
 	// build a new block simulating parent's child and uncle's nephew
-	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts = uint64(time.Now().UnixNano())
+	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, ts, ts-parent.Timestamp().Uint64(), c.minerId, c.state)
 	child.UNCLEs = append(child.UNCLEs, *uncle.Hash())
 	
 	// present it for mining and acceptance

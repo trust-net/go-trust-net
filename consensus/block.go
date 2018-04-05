@@ -20,6 +20,7 @@ type Block interface {
 	Miner() *core.Byte64
 	Nonce() *core.Byte8
 	Timestamp() *core.Byte8
+	Delta() *core.Byte8
 	Depth() *core.Byte8
 	Weight() *core.Byte8
 	Update(key, value []byte) bool
@@ -41,30 +42,12 @@ type BlockSpec struct {
 	STATE core.Byte64
 	TXs []Transaction
 	TS core.Byte8
+	DELTA core.Byte8
 	DEPTH core.Byte8
 	WT core.Byte8
 	UNCLEs []core.Byte64
 	NONCE core.Byte8
 }
-
-//func (b *BlockSpec) Block() Block {
-//	b &block{
-//		BlockSpec: BlockSpec {
-//			PHASH: b.PHASH,
-//			MINER: b.MINER,
-//			STATE: b.STATE,
-//			TXs: make([]Transaction, len(b.TXs),
-//			TS: b.TS,
-//			DEPTH: b.DEPTH,
-//			WT: b.WT,
-//			UNCLEs: make([]core.Byte64, len(b.UNCLEs),
-//			NONCE: b.NONCE,
-//		},
-////		hash: b.PHASH,
-////		worldState: state,
-//		isNetworkBlock: true,
-//	}
-//}
 
 func init() {
 	gob.Register(&BlockSpec{})
@@ -96,6 +79,10 @@ func (b *block) Nonce() *core.Byte8 {
 
 func (b *block) Timestamp() *core.Byte8 {
 	return &b.TS
+}
+
+func (b *block) Delta() *core.Byte8 {
+	return &b.DELTA
 }
 
 func (b *block) Depth() *core.Byte8 {
@@ -220,6 +207,7 @@ func (b *block) computeHash() *core.Byte64 {
 	// parent hash +
 	// miner ID +
 	// block timestampt +
+	// time since parent block +
 	// world state fingerprint +
 	// block's depth from genesis +
 	// transactions... +
@@ -230,6 +218,7 @@ func (b *block) computeHash() *core.Byte64 {
 	data = append(data, b.PHASH.Bytes()...)
 	data = append(data, b.MINER.Bytes()...)
 	data = append(data, b.TS.Bytes()...)
+	data = append(data, b.DELTA.Bytes()...)
 	var statePtr *core.Byte64
 	if b.worldState != nil {
 		// persist the world state
@@ -274,7 +263,7 @@ func (b *block) computeHash() *core.Byte64 {
 				hash = sha512.Sum512(dataWithNonce)
 				// check PoW validation
 				if b.pow != nil {
-					isPoWDone = b.pow(hash[:])
+					isPoWDone = b.pow(hash[:], b.TS.Uint64(), b.DELTA.Uint64())
 				} else {
 					isPoWDone = true
 				}
@@ -322,6 +311,7 @@ func (b *block) clone(state trie.WorldState) *block {
 			STATE: state.Hash(),
 			TXs: nil,
 			TS: b.TS,
+			DELTA: b.DELTA,
 			DEPTH: b.DEPTH,
 			WT: b.WT,
 			UNCLEs: nil,
@@ -349,6 +339,7 @@ func (b *block) Spec() BlockSpec {
 		MINER: b.MINER,
 		TXs: make([]Transaction,len(b.TXs)),
 		TS: b.TS,
+		DELTA: b.DELTA,
 		DEPTH: b.DEPTH,
 		WT: b.WT,
 		UNCLEs: make([]core.Byte64,len(b.UNCLEs)),
@@ -382,9 +373,9 @@ func (b *block) Numeric() uint64 {
 }
 
 // private method, can only be invoked by DAG implementation, so can be initiaized correctly
-func newBlock(previous *core.Byte64, weight uint64, depth uint64, ts uint64, miner *core.Byte64, state trie.WorldState) *block {
+func newBlock(previous *core.Byte64, weight uint64, depth uint64, ts, pTs uint64, miner *core.Byte64, state trie.WorldState) *block {
 	if ts == 0 {
-		ts = uint64(time.Now().UnixNano())
+		ts = uint64(time.Now().Unix())
 	}
 	b := &block{
 		BlockSpec: BlockSpec {
@@ -392,6 +383,7 @@ func newBlock(previous *core.Byte64, weight uint64, depth uint64, ts uint64, min
 			MINER: *miner,
 			TXs: make([]Transaction,0,1),
 			TS: *core.Uint64ToByte8(ts),
+			DELTA: *core.Uint64ToByte8(ts - pTs),
 			DEPTH: *core.Uint64ToByte8(depth),
 			WT: *core.Uint64ToByte8(weight),
 			UNCLEs: make([]core.Byte64, 0),

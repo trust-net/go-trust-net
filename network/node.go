@@ -32,11 +32,11 @@ type PeerNode interface {
 	Send(msgcode uint64, data interface{}) error
 	Peer() *p2p.Peer
 	Conn() p2p.MsgReadWriter
-	Status() *AppConfig
+	Status() *HandshakeMsg
 	NodeId() core.Byte64
 	Id() string
 	Name() string
-	SetStatus(status *AppConfig)
+	SetStatus(status *HandshakeMsg)
 	AddTx(tx interface{})
 	HasTx(tx interface{}) bool
 	AddBlock(block interface{})
@@ -49,7 +49,7 @@ type peerNode struct {
 	// reference to read/write connection
 	conn	 p2p.MsgReadWriter
 	// reference to status of the node
-	status *AppConfig
+	status *HandshakeMsg
 	// Set of transactions known to be known by this peer
 	knownTxs    *common.Set
 	// Set of blocks known to be known by this peer 
@@ -94,7 +94,7 @@ func (node *peerNode) Conn() p2p.MsgReadWriter {
 	return node.conn
 }
 
-func (node *peerNode) Status() *AppConfig {
+func (node *peerNode) Status() *HandshakeMsg {
 	return node.status
 }
 
@@ -110,7 +110,7 @@ func (node *peerNode) Name() string {
 	return node.peer.Name()
 }
 
-func (node *peerNode) SetStatus(status *AppConfig) {
+func (node *peerNode) SetStatus(status *HandshakeMsg) {
 	node.status = status
 }
 
