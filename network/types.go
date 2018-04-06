@@ -62,6 +62,20 @@ type PlatformConfig struct {
 	minerId *core.Byte64
 }
 
+// container to access world state information
+type State struct {
+	block consensus.Block
+}
+
+func (s *State) Get(key []byte) ([]byte, error) {
+	return s.block.Lookup(key)
+}
+
+func (s *State) GetAllKeys() ([][]byte, error) {
+	// TODO
+	return nil, core.NewCoreError(ERR_NOT_IMPLEMENTED, "TBD")
+}
+
 type Transaction struct {
 	payload []byte
 	block consensus.Block

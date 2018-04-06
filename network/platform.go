@@ -21,6 +21,8 @@ type PlatformManager interface {
 	// query status of a submitted transaction, by its transaction ID
 	// returns the block where it was finalized, or error if not finalized
 	Status(txId *core.Byte64) (consensus.Block, error)
+	// get a snapshot of current world state
+	State() *State
 	// submit a transaction payload, and get a transaction ID
 	Submit(txPayload []byte, submitter *core.Byte64) *core.Byte64
 	// get a list of current peers
@@ -142,6 +144,12 @@ func (mgr *platformManager) Status(txId *core.Byte64) (consensus.Block, error) {
 		return nil, core.NewCoreError(consensus.ERR_TX_NOT_APPLIED, "transaction rejected")
 	} else {
 		return mgr.engine.TransactionStatus(txId)
+	}
+}
+
+func (mgr *platformManager) State() *State {
+	return &State{
+		block: mgr.engine.BestBlock(),
 	}
 }
 

@@ -66,54 +66,6 @@ func TestNewPlatformManagerInterface(t *testing.T) {
 	}
 }
 
-func testTwoApps(t *testing.T) {
-	log.SetLogLevel(log.DEBUG)
-	defer log.SetLogLevel(log.NONE)
-	db1, _ := db.NewDatabaseInMem()
-	db2, _ := db.NewDatabaseInMem()
-	conf1 := testNetworkConfig(nil, nil, nil)
-	conf2 := testNetworkConfig(nil, nil, nil)
-	var mgr1 PlatformManager
-	var mgr2 PlatformManager
-	var err error
-	if mgr1, err = NewPlatformManager(&conf1.AppConfig, &conf1.ServiceConfig, db1); err != nil {
-		t.Errorf("Failed to create platform manager 1: %s", err)
-	}
-	if err = mgr1.Start(); err != nil {
-		t.Errorf("Failed to start platform manager 1: %s", err)
-	}
-	// wire 1st app as boot node into 2nd app
-	app := mgr1.(*platformManager)
-	appId := fmt.Sprintf("enode://%x@192.168.1.114:%d", *app.config.minerId, app.srv.NodeInfo().Ports.Discovery)
-	fmt.Printf("App: '%s'\n", appId)
-	conf2.BootstrapNodes = []string{appId}
-	if mgr2, err = NewPlatformManager(&conf2.AppConfig, &conf2.ServiceConfig, db2); err != nil {
-		t.Errorf("Failed to create platform manager 2: %s", err)
-	}
-	if err = mgr2.Start(); err != nil {
-		t.Errorf("Failed to start platform manager 2: %s", err)
-	}
-//	// connect the two apps
-//	mgr2.(*platformManager).srv.AddPeer(mgr1.(*platformManager).srv.Self())
-	// sleep for some time, for peers to connect
-	time.Sleep(1000 * time.Millisecond)
-	// submit transaction to mgr1
-	txPayload := []byte("test tx payload")
-	txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-	txId := mgr1.Submit(txPayload, txSubmitter)
-	// sleep for some time, for transaction to be processed
-	time.Sleep(1000 * time.Millisecond)
-	if _, err = mgr2.Status(txId); err != nil {
-		t.Errorf("Failed to get transaction updated on mgr 2: %s", err)
-	}
-	if err = mgr1.Stop(); err != nil {
-		t.Errorf("Failed to stop platform manager 1: %s", err)
-	}
-	if err = mgr2.Stop(); err != nil {
-		t.Errorf("Failed to stop platform manager 2: %s", err)
-	}
-}
-
 func TestNewPlatformManagerGoodArgs(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
