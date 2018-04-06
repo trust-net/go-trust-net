@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/p2p/discover"
+	ethLog "github.com/ethereum/go-ethereum/log"
 )
 
 type PlatformManager interface {
@@ -205,7 +206,12 @@ func (mgr *platformManager) configureP2P() error {
 		NAT: 		natAny,
 		Protocols:  mgr.protocol(),
 		BootstrapNodes: bootstrapNodes,
+		Logger: ethLog.Root(),
 	}
+	handler := ethLog.NewGlogHandler(ethLog.StreamHandler(log.GetLogFile(),ethLog.LogfmtFormat()))
+	handler.Verbosity(ethLog.LvlInfo)
+	serverConfig.Logger.SetHandler(handler)
+	serverConfig.Logger.Info("This is a test log message using eth logger....")
 	mgr.srv = &p2p.Server{Config: serverConfig}
 	if err := mgr.srv.Start(); err != nil {
 		mgr.logger.Error("Failed to start p2p server: %s", err)
@@ -214,7 +220,7 @@ func (mgr *platformManager) configureP2P() error {
 	// initialize self ID
 	mgr.config.NodeId = mgr.srv.Self().String()
 	mgr.config.minerId = core.BytesToByte64(mgr.srv.Self().ID.Bytes())
-	mgr.logger.Debug("Started application peer node: %s", mgr.config.NodeId)
+	mgr.logger.Debug("Started application node: %s", mgr.config.NodeId)
 	return nil
 }
 

@@ -26,19 +26,19 @@ func testTwoApps(t *testing.T) {
 	if err = mgr1.Start(); err != nil {
 		t.Errorf("Failed to start platform manager 1: %s", err)
 	}
-	// wire 1st app as boot node into 2nd app
-	app := mgr1.(*platformManager)
-	appId := fmt.Sprintf("enode://%x@192.168.1.114:%d", *app.config.minerId, app.srv.NodeInfo().Ports.Discovery)
-	fmt.Printf("App: '%s'\n", appId)
-	conf2.BootstrapNodes = []string{appId}
+//	// wire 1st app as boot node into 2nd app
+//	app := mgr1.(*platformManager)
+//	appId := fmt.Sprintf("enode://%x@192.168.1.114:%d", *app.config.minerId, app.srv.NodeInfo().Ports.Discovery)
+//	fmt.Printf("App: '%s'\n", appId)
+//	conf2.BootstrapNodes = []string{appId}
 	if mgr2, err = NewPlatformManager(&conf2.AppConfig, &conf2.ServiceConfig, db2); err != nil {
 		t.Errorf("Failed to create platform manager 2: %s", err)
 	}
 	if err = mgr2.Start(); err != nil {
 		t.Errorf("Failed to start platform manager 2: %s", err)
 	}
-//	// connect the two apps
-//	mgr2.(*platformManager).srv.AddPeer(mgr1.(*platformManager).srv.Self())
+	// connect the two apps
+	mgr2.(*platformManager).srv.AddPeer(mgr1.(*platformManager).srv.Self())
 	// sleep for some time, for peers to connect
 	time.Sleep(1000 * time.Millisecond)
 	// submit transaction to mgr1
