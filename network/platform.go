@@ -60,6 +60,7 @@ type platformManager struct {
 	shutdownBlockProducer chan bool
 	peerDb db.PeerSetDb
 	deadTxs map[core.Byte64]bool
+	peers map[string]AppConfig
 	peerCount	int
 	isRunning bool
 }
@@ -89,6 +90,7 @@ func NewPlatformManager(appConfig *AppConfig, srvConfig *ServiceConfig, appDb db
 		shutdownBlockProducer: make(chan bool),
 		peerDb: db.NewPeerSetDbInMemory(),
 		deadTxs: make(map[core.Byte64]bool),
+		peers: make(map[string]AppConfig),
 	}
 	mgr.logger = log.NewLogger(mgr)
 
@@ -164,9 +166,12 @@ func (mgr *platformManager) Submit(txPayload []byte, submitter *core.Byte64) *co
 }
 
 func (mgr *platformManager) Peers() []AppConfig {
-	peers := make([]AppConfig,0)
-	// TODO: find from peer set DB and fill up
-	
+	peers := make([]AppConfig,len(mgr.peers))
+	i := 0
+	for _, peer := range mgr.peers {
+		peers[i] = peer
+		i++
+	}
 	return peers
 }
 
@@ -416,6 +421,11 @@ func (mgr *platformManager) processBlock(block consensus.Block, from *peerNode) 
 	} else {
 		// mark the sender has having seen this message
 		from.AddTx(block.Hash())
+		// check if we have seen this before
+		if mgr.peerDb.HaveISeenIt(*block.Hash()) {
+			mgr.logger.Debug("dropping duplicate forwarded message: %x", *block.Hash())
+			return core.NewCoreError(consensus.ERR_DUPLICATE_BLOCK, "repeated block")
+		}
 		// broadcast block to peers
 		mgr.logger.Debug("Forwarding accepted network block from %s", from.Id())
 		mgr.broadcast(block)
@@ -427,11 +437,6 @@ func (mgr *platformManager) handleNewBlockMsg(msg p2p.Msg, from *peerNode) error
 	if block, err := mgr.engine.DecodeNetworkBlock(msg); err != nil {
 		return core.NewCoreError(ErrorBadBlock, err.Error())
 	} else {
-		// check if we have seen this before
-		if mgr.peerDb.HaveISeenIt(*block.Hash()) {
-			mgr.logger.Debug("dropping duplicate forwarded message: %x", *block.Hash())
-			return core.NewCoreError(ERR_REPEAT_BLOCK, "repeated block")
-		}
 		// process the block
 		if err := mgr.processBlock(block, from); err != nil && err.(*core.CoreError).Code() != consensus.ERR_DUPLICATE_BLOCK {
 			mgr.logger.Error("%s: Could not accept new block: %s", from.Id(), err)
@@ -601,9 +606,21 @@ func (mgr *platformManager) PeerCount() int {
 	return mgr.peerCount
 }
 
+func (mgr *platformManager) registerPeer(peer PeerNode, handshake *HandshakeMsg, peerConf *AppConfig) error {
+	if err := mgr.peerDb.RegisterPeerNode(peer); err != nil {
+		return err
+	} else {
+		mgr.peerCount++
+		peer.SetStatus(handshake)
+		mgr.peers[peer.Id()] = *peerConf
+	}
+	return nil
+}
+
 func (mgr *platformManager) unregisterPeer(node PeerNode) {
 	mgr.peerDb.UnRegisterPeerNodeForId(node.Id())
 	mgr.peerCount--
+	delete(mgr.peers, node.Id())
 }
 
 //func (mgr *platformManager) AddPeer(node *discover.Node) error {
@@ -672,13 +689,7 @@ func (mgr *platformManager) validateAndAdd(handshake *HandshakeMsg, peer PeerNod
 		return err
 	}
 	// add the peer into our DB
-	if err := mgr.peerDb.RegisterPeerNode(peer); err != nil {
-		return err
-	} else {
-		mgr.peerCount++
-		peer.SetStatus(handshake)
-	}
-	return nil
+	return mgr.registerPeer(peer, handshake, &peerConf)
 }
 
 func (mgr *platformManager) mineCandidateBlock(newBlock consensus.Block) bool {
@@ -705,7 +716,8 @@ func (mgr *platformManager) mineCandidateBlock(newBlock consensus.Block) bool {
 // background go routine to produce blocks with transactions from queue
 func (mgr *platformManager) blockProducer() {
 	mgr.logger.Debug("starting up block producer")
-	newBlock := mgr.engine.NewCandidateBlock()
+	var newBlock consensus.Block
+//	newBlock := mgr.engine.NewCandidateBlock()
 	txCount := 0
 	// start a timer, in case there are no transactions
 	mgr.logger.Debug("starting timer for %d duration", maxTxWaitSec)
@@ -717,6 +729,9 @@ func (mgr *platformManager) blockProducer() {
 				mgr.logger.Debug("shutting down block producer")
 				return
 			case tx := <- mgr.txQ:
+				if newBlock == nil {
+					newBlock = mgr.engine.NewCandidateBlock()
+				}
 				mgr.logger.Debug("processing transaction id: %x", *tx.Id())
 				if mgr.processTx(tx, newBlock) {
 					// application processed transaction successfully, add to block
@@ -733,7 +748,7 @@ func (mgr *platformManager) blockProducer() {
 								mgr.deadTxs[*tx.Id()] = true
 							}
 						}
-						newBlock = mgr.engine.NewCandidateBlock()
+						newBlock = nil
 						txCount = 0
 						wait.Reset(maxTxWaitSec)
 					} else {
@@ -745,6 +760,9 @@ func (mgr *platformManager) blockProducer() {
 					mgr.deadTxs[*tx.Id()] = true
 				}
 			case <- wait.C:
+				if newBlock == nil {
+					newBlock = mgr.engine.NewCandidateBlock()
+				}
 				mgr.logger.Debug("timed out waiting for transactions")
 				wait.Reset(maxTxWaitSec*10)
 				if !mgr.mineCandidateBlock(newBlock) {
@@ -754,7 +772,7 @@ func (mgr *platformManager) blockProducer() {
 						mgr.deadTxs[*tx.Id()] = true
 					}
 				}
-				newBlock = mgr.engine.NewCandidateBlock()
+				newBlock = nil
 				txCount = 0
 				wait.Reset(maxTxWaitSec)
 		}

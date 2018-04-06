@@ -357,7 +357,7 @@ func (c *BlockChainConsensus) isUncleValid(child *block, uHash *core.Byte64) boo
 			uncle, _ = c.getChainNode(uncle.Parent)
 			distance++
 		}
-		c.logger.Debug("Found uncle at distance: %d", distance)
+//		c.logger.Debug("Found uncle at distance: %d", distance)
 //		return parent != nil && uncle != nil && (child.Depth().Uint64() - parent.Depth <  maxUncleDistance)
 		return parent != nil && uncle != nil && (distance <=  maxUncleDistance)
 	}
@@ -509,7 +509,7 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 	}
 	// verify that block is not introducing a duplicate transactions in the canonical chain
 	for _, tx := range child.Transactions() {
-		c.logger.Debug("Checking pre-existing transaction: %x", *tx.Id())
+//		c.logger.Debug("Checking pre-existing transaction: %x", *tx.Id())
 		if b, n, _ := c.transactionStatus(tx.Id());  b != nil && n != nil &&
 			(n.isMainList() ||
 				(b.Weight().Uint64() > child.Weight().Uint64() ||
@@ -534,7 +534,7 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 	// compare current main list weight with weight of new node's list
 	// to find if main list needs rebalancing
 	if c.weight < childNode.weight() || (c.weight == childNode.weight() && c.tip.Numeric() > child.Numeric()) {
-		c.logger.Debug("rebalancing the block chain after new block addition")
+//		c.logger.Debug("rebalancing the block chain after new block addition")
 		// move depth and tip of blockchain
 		c.weight = childNode.weight()
 		c.tip = child

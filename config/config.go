@@ -52,6 +52,14 @@ func (c *config) Bootnodes() []*discover.Node {
 	return c.bootnodes
 }
 
+func (c *config) BootnodeStrings() []string {
+	nodes := make([]string, len(c.bootnodes))
+	for i,node := range c.bootnodes {
+		nodes[i] = node.String()
+	}
+	return nodes
+}
+
 func (c *config) Id() *string {
 	return &c.id
 }

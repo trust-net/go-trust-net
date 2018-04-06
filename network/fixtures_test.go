@@ -72,6 +72,8 @@ func testNetworkConfig(processor TxProcessor, approver PowApprover, validator Pe
 		},
 		ServiceConfig: ServiceConfig{
 			IdentityKey: nodekey,
+			ProtocolName: "testr",
+			ProtocolVersion: 0x01,
 			TxProcessor: processor,
 			PowApprover: approver,
 			PeerValidator: validator,

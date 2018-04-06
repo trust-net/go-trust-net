@@ -10,7 +10,7 @@ import (
 	"github.com/trust-net/go-trust-net/log"
 )
 
-func testTwoApps(t *testing.T) {
+func TestTwoApps(t *testing.T) {
 	log.SetLogLevel(log.DEBUG)
 	defer log.SetLogLevel(log.NONE)
 	db1, _ := db.NewDatabaseInMem()

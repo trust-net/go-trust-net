@@ -290,7 +290,6 @@ func (b *block) computeHash() *core.Byte64 {
 }
 
 func (b *block) registerTransactions() error {
-	log.AppLogger().Info("start of transaction update...")
 	if b.worldState != nil {
 		for _, tx := range b.TXs {
 			if err := b.worldState.RegisterTransaction(tx.Id(), b.hash); err != nil {
@@ -298,7 +297,6 @@ func (b *block) registerTransactions() error {
 			}
 		}
 	}
-	log.AppLogger().Info("... end of transaction update")
 	return nil	
 }
 
