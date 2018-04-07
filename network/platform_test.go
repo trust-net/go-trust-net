@@ -614,3 +614,63 @@ func testPlatformManagerPowTimeout(t *testing.T) {
 		}
 	}
 }
+
+func TestPlatformManagerPowSuspend(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	called := false
+	var block consensus.Block
+	var hash core.Byte64
+	var mgr PlatformManager
+	var err error
+	conf := testNetworkConfig(func(tx *Transaction) bool{
+			block = tx.block
+			return true
+		}, func(powHash []byte, ts, delta uint64) bool {
+			called = true
+			hash = *core.BytesToByte64(powHash)
+			return true
+		}, nil)
+	if mgr, err = NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	}
+	if err = mgr.Start(); err != nil {
+		t.Errorf("Failed to start platform manager: %s", err)
+	}
+	// submit transaction
+	txPayload := []byte("test tx payload #1")
+	txSubmitter := ([]byte("test rx submitter #2"))
+	txId := mgr.Submit(txPayload, nil, txSubmitter)
+	// sleep for some time, for transaction to be processed
+	time.Sleep(100 * time.Millisecond)
+	if _, err = mgr.Status(txId); err != nil {
+		t.Errorf("Failed to get submitted transaction status: %s", err)
+	}
+	// suspend block producer
+	if err = mgr.Suspend(); err != nil {
+		t.Errorf("Failed to suspend platform manager: %s", err)
+	}
+	// submit transaction
+	txPayload = []byte("test tx payload #1")
+	txSubmitter = ([]byte("test rx submitter #2"))
+	txId = mgr.Submit(txPayload, nil, txSubmitter)
+	// sleep for some time, for transaction to be processed
+	time.Sleep(100 * time.Millisecond)
+	if _, err = mgr.Status(txId); err == nil || err.(*core.CoreError).Code() != consensus.ERR_TX_NOT_FOUND {
+		t.Errorf("did not expect transaction status: %s", err)
+	}
+	// resume block producer
+	if err = mgr.Start(); err != nil {
+		t.Errorf("Failed to start platform manager: %s", err)
+	}
+	// sleep for some time, for transaction to be processed
+	time.Sleep(100 * time.Millisecond)
+	if _, err = mgr.Status(txId); err != nil {
+		t.Errorf("Failed to get submitted transaction status: %s", err)
+	}
+	
+	if err = mgr.Stop(); err != nil {
+		t.Errorf("Failed to stop platform manager: %s", err)
+	}
+}

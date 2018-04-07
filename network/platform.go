@@ -15,10 +15,12 @@ import (
 )
 
 type PlatformManager interface {
-	// start the platform processing
+	// start the platform block producer
 	Start() error
 	// stop the platform processing
 	Stop() error
+	// suspend the platform block producer
+	Suspend() error
 	// query status of a submitted transaction, by its transaction ID
 	// returns the block where it was finalized, or error if not finalized
 	Status(txId *core.Byte64) (consensus.Block, error)
@@ -114,13 +116,25 @@ func NewPlatformManager(appConfig *AppConfig, srvConfig *ServiceConfig, appDb db
 
 func (mgr *platformManager) Start() error {
 	if mgr.isRunning {
-		mgr.logger.Debug("Application already running: %s", mgr.config.NodeId)
-		return core.NewCoreError(ERR_DUPLICATE_START, "application already running")
+		mgr.logger.Debug("Block production already running: %s", mgr.config.NodeId)
+		return core.NewCoreError(ERR_DUPLICATE_START, "block production already running")
 	}
 
 	// start block producer
 	go mgr.blockProducer()
 	mgr.isRunning = true
+	return nil
+}
+
+func (mgr *platformManager) Suspend() error {
+	if !mgr.isRunning {
+		mgr.logger.Debug("Block production already suspended: %s", mgr.config.NodeId)
+		return core.NewCoreError(ERR_DUPLICATE_SUSPEND, "block production already suspended")
+	}
+
+	// stop the block producer
+	mgr.shutdownBlockProducer <- true
+	mgr.isRunning = false
 	return nil
 }
 
@@ -300,6 +314,10 @@ func (mgr *platformManager) syncNode(best consensus.Block, node *peerNode) error
 	node.LastHash = best.Hash()
 	// wait until sync completes, or an error
 	for isSyncNeeded(best, node) {
+		// suspend block production
+		if mgr.isRunning {
+			 mgr.Suspend()
+		}
 		// request sync starting from the genesis block (in case there was a fork with better chain)
 		if err := node.Send(GetBlockHashesRequest, GetBlockHashesRequestMsg{
 				ParentHash: *node.LastHash,
@@ -328,6 +346,10 @@ func (mgr *platformManager) syncNode(best consensus.Block, node *peerNode) error
 //		if !mgr.isInShutdown {
 //			best = mgr.engine.BestBlock()
 //		}
+	}
+	// resume block production
+	if !mgr.isRunning {
+		 mgr.Start()
 	}
 	mgr.logger.Debug("Syncing with peer '%s' done", node.Id())
 	return nil
