@@ -18,7 +18,7 @@ var testNode = core.BytesToByte64([]byte("a test node"))
 
 func init() {
 	db, _ := db.NewDatabaseInMem()
-	genesis := newBlock(core.BytesToByte64(nil), 0, 0, genesisTime, core.BytesToByte64(nil), trie.NewMptWorldState(db))
+	genesis := newBlock(core.BytesToByte64(nil), 0, 0, genesisTime, 0, core.BytesToByte64(nil), trie.NewMptWorldState(db))
 	genesisHash = genesis.computeHash()
 }
 
@@ -62,7 +62,8 @@ func TestNewBlockChainConsensusFromTip(t *testing.T) {
 		return
 	}
 	// move the tip to a new block
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	tip := child.computeHash()
 	if err := db.Put(dagTip, tip.Bytes()); err != nil {
 			t.Errorf("failed to save new DAG tip: %s", err)
@@ -152,6 +153,51 @@ func TestMineCandidateBlock(t *testing.T) {
 	<-done
 }
 
+func TestMineCandidateBlockPoW(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+	// get a new candidate block
+	child := c.NewCandidateBlock()
+	// add a transaction to the candidate block
+	child.Update([]byte("key"), []byte("value"))
+	tx := testTransaction("transaction 1")
+	if err := child.AddTransaction(tx); err != nil {
+		t.Errorf("failed to add transaction: %s", err)
+	}
+	// mining will be executed in a background goroutine
+	log.SetLogLevel(log.NONE)
+	done := make(chan struct{})
+	powCalled := false
+	c.MineCandidateBlockPoW(child, func(hash []byte, ts, delta uint64) bool {
+			powCalled = true
+			return true
+		},func(b Block, err error) {
+			defer func() {done <- struct{}{}}()
+			if err != nil {
+				t.Errorf("failed to mine candidate block: %s", err)
+				return
+			}
+			// canonical chain's tip should match child node
+			if *c.Tip().Hash() != *child.Hash() {
+				t.Errorf("Canonical chain tip does not match mined block")
+			}
+			// world view should also match
+			if c.state.Hash() != child.(*block).STATE {
+				t.Errorf("World state not updated after mining")
+			}
+	});
+	// wait for our callback to finish
+	<-done
+	if !powCalled {
+		t.Errorf("PoW approver not called")
+	}
+}
+
 func TestMineCandidateBlockDuplicate(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
@@ -218,7 +264,7 @@ func TestTransactionStatus(t *testing.T) {
 
 	// now query for the transaction
 	var b Block
-	if b,err = c.TransactionStatus(tx); err != nil {
+	if b,err = c.TransactionStatus(tx.Id()); err != nil {
 		t.Errorf("failed to get transaction status: %s", err)
 		return
 	}
@@ -231,6 +277,143 @@ func TestTransactionStatus(t *testing.T) {
 	}
 }
 
+func TestTransactionStatusNotCanonicalChain(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, _ := NewBlockChainConsensus(genesisTime, testNode, db)
+
+	// create a candidate block
+	block := c.NewCandidateBlock()
+	// add a transaction to the block
+	tx := testTransaction("transaction 1")
+	block.AddTransaction(tx)
+	// add block to the chain
+	addBlock(block, c)
+
+	// query for transaction, now it should be registered with new block
+	if b,err := c.TransactionStatus(tx.Id()); err != nil {
+		t.Errorf("failed to get transaction status: %s", err)
+		return
+	} else if *b.Hash() != *block.Hash() {
+		t.Errorf("transaction has incorrect block")
+	}
+
+	// hack DB to remove block from main list
+	blockNode,_ := c.getChainNode(block.Hash())
+	blockNode.setMainList(false)
+	c.putChainNode(blockNode)
+
+	// query for transaction, this time block should not show as registered
+	if _,err := c.TransactionStatus(tx.Id()); err == nil {
+		t.Errorf("failed to mark transaction unregistered for non canonical chain block")
+	}
+}
+
+func TestDuplicateTransactionCheckInMining(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, _ := NewBlockChainConsensus(genesisTime, testNode, db)
+
+	// create a candidate block
+	block1 := c.NewCandidateBlock()
+	// add block to the chain
+	addBlock(block1, c)
+
+	// create another candidate block
+	block2 := c.NewCandidateBlock()
+	// add a transaction to the block
+	tx := testTransaction("transaction 1")
+	block2.AddTransaction(tx)
+	// add same transaction (duplicate) into DB
+	c.state.RegisterTransaction(tx.Id(), block1.Hash())
+	// add block to the chain
+	if err := addBlock(block2, c); err == nil {
+		t.Errorf("failed to detect duplicate transaction")
+	} else if err.(*core.CoreError).Code() != ERR_DUPLICATE_TX {
+		t.Errorf("Incorrect error for duplicate transaction: %s", err)
+	}
+}
+
+func TestTransactionStatusAfterRebalance(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	addBlock(ancestor, c)
+
+
+	// create two parallel blocks on blockchain
+	block1 := c.NewCandidateBlock()
+	block2 := c.NewCandidateBlock()
+	
+	// create new world states on the two blocks
+	block1.Update([]byte("key1"), []byte("value1"))
+	block2.Update([]byte("key2"), []byte("value2"))
+	
+	// add the two blocks into block chain
+	addBlock(block1, c)
+	addBlock(block2, c)
+	
+	// verify that block's world state are different
+	if block1.(*block).STATE == block2.(*block).STATE {
+		t.Errorf("block states are not different")
+	}
+	
+	// indentify the parent and uncle blocks
+	var uncle, parent Block
+	if *c.tip.Hash() == *block1.Hash() {
+		uncle = block2
+		parent = block1
+	} else {
+		uncle = block1
+		parent = block2
+	}
+
+	// update DB to add a transaction to the current parent block
+	tx := testTransaction("transaction 1")
+	c.state.RegisterTransaction(tx.Id(), parent.Hash())
+	// query for transaction, it should be registered with parent block
+	var b Block
+	if b,err = c.TransactionStatus(tx.Id()); err != nil {
+		t.Errorf("failed to get transaction status: %s", err)
+		return
+	}
+	if b == nil {
+		t.Errorf("got nil instance")
+		return
+	}
+	if *b.Hash() != *parent.Hash() {
+		t.Errorf("transaction has incorrect block")
+	}
+
+	// build a new block simulating uncle's child and parent's nephew
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(uncle.Hash(), uncle.Weight().Uint64() + 1 + 1, uncle.Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, uncle.(*block).worldState)
+	child.UNCLEs = append(child.UNCLEs, *parent.Hash())
+
+	// try adding same transaction (duplicate) to the child block
+	if err := child.AddTransaction(tx); err == nil || err.(*core.CoreError).Code() != ERR_DUPLICATE_TX {
+		t.Errorf("failed to detect duplicate transaction")
+	}
+
+	// add the block
+	if err := addBlock(child, c); err != nil {
+		t.Errorf("failed to add child block: %s", err)
+		return
+	}
+
+	// query for transaction, now it should be registered with new child block
+	if b,err = c.TransactionStatus(tx.Id()); err == nil || err.(*core.CoreError).Code() != ERR_TX_NOT_APPLIED {
+		t.Errorf("failed to get invalid transaction status: %s", err)
+		return
+	}
+}
+
 func TestDeserializeNetworkBlock(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
@@ -240,7 +423,8 @@ func TestDeserializeNetworkBlock(t *testing.T) {
 		return
 	}
 	// build a new block to simulate current tip's child
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.computeHash()
 	data,_ := serializeBlock(child)
 	var b Block
@@ -270,19 +454,22 @@ func TestDeserializeNetworkBlockWithUncle(t *testing.T) {
 		return
 	}
 	// add an uncle block to blockchain
-	uncle := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	uncle := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	uncle.computeHash()
 	c.putBlock(uncle)
 	c.putChainNode(newChainNode(uncle))
 
 	// build a parent block to blockchain
-	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts = uint64(time.Now().UnixNano())
+	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	parent.computeHash()
 	c.putBlock(parent)
 	c.putChainNode(newChainNode(parent))
 
 	// build a new block simulating parent's child and uncle's nephew
-	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts = uint64(time.Now().UnixNano())
+	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.UNCLEs = append(child.UNCLEs, *uncle.Hash())
 	child.computeHash()
 	data,_ := serializeBlock(child)
@@ -309,7 +496,8 @@ func TestAcceptNetworkBlock(t *testing.T) {
 		return
 	}
 	// build a new block to simulate current tip's child
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.computeHash()
 	data,_ := serializeBlock(child)
 	var b Block
@@ -341,7 +529,8 @@ func TestAcceptNetworkBlockDuplicate(t *testing.T) {
 		return
 	}
 	// build a new block to simulate current tip's child
-	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	child := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	child.computeHash()
 	data,_ := serializeBlock(child)
 	var b Block
@@ -379,7 +568,7 @@ func makeBlocks(len int, parent *block, c *BlockChainConsensus) []Block {
 	for i := uint64(0); i < uint64(len); i++ {
 		state := trie.NewMptWorldState(c.db)
 		state.Rebase(parent.worldState.Hash())
-		child := newBlock(parent.Hash(), parent.Weight().Uint64()+1, parent.Depth().Uint64()+1, 0, testMiner, state)
+		child := newBlock(parent.Hash(), parent.Weight().Uint64()+1, parent.Depth().Uint64()+1, 0, parent.Timestamp().Uint64(), testMiner, state)
 		child.computeHash()
 		nodes[i] = child
 		parent = child
@@ -417,6 +606,8 @@ func TestBlockChainConsensusHeaviestChain(t *testing.T) {
 	if err := addChain(c, chain1); err != nil {
 		t.Errorf("1st chain failed to add block: %s", err)
 	}
+	// wait 1 sec, so that 2nd chain can have different timestamp
+	time.Sleep(time.Second * 1)
 	// now add 2nd chain with 4 blocks after the ancestor	
 	chain2 := makeBlocks(4, ancestor.(*block), c)
 	log.SetLogLevel(log.NONE)
@@ -481,7 +672,7 @@ func TestBlockChainConsensusUncleWeight(t *testing.T) {
 	// find out, based on numeric value, which block won (since both have same weight)
 	var parent Block
 	var uncle Block
-	if computeNum(candidate2.Hash()) < computeNum(candidate3.Hash()) {
+	if candidate2.Numeric() < candidate3.Numeric() {
 		parent = candidate2
 		uncle = candidate3
 	} else {
@@ -552,6 +743,10 @@ func TestBlockChainConsensus(t *testing.T) {
 
 		// create a new candidate block
 		candidate := myChain.NewCandidateBlock()
+		// add a transaction every 7th count
+		if (counter+1) % 7 == 0 {
+			candidate.AddTransaction(NewTransaction([]byte("some payload"), []byte("some random signature"), myNode.Bytes()))
+		}
 
 		// create a mining callback handler for this candidate block
 		done := make(chan struct{})
@@ -751,13 +946,15 @@ func extendChainWithUncle(c *BlockChainConsensus, t *testing.T) (*block, *block)
 	ancestor = c.BestBlock()
 
 	// add an uncle block to blockchain
-	uncle := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts := uint64(time.Now().UnixNano())
+	uncle := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	uncle.computeHash()
 	c.putBlock(uncle)
 	c.putChainNode(newChainNode(uncle))
 
 	// build a parent block to blockchain
-	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts = uint64(time.Now().UnixNano())
+	parent := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, c.state)
 	parent.computeHash()
 	c.putBlock(parent)
 
@@ -771,7 +968,8 @@ func extendChainWithUncle(c *BlockChainConsensus, t *testing.T) (*block, *block)
 	c.putChainNode(ancestorNode)
 
 	// build a new block simulating parent's child and uncle's nephew
-	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, c.state)
+	ts = uint64(time.Now().UnixNano())
+	child := newBlock(parent.Hash(), parent.Weight().Uint64() + 1 + 1, parent.Depth().Uint64() + 1, ts, ts-parent.Timestamp().Uint64(), c.minerId, c.state)
 	child.UNCLEs = append(child.UNCLEs, *uncle.Hash())
 	
 	// present it for mining and acceptance
@@ -806,7 +1004,6 @@ func TestBlockChainConsensusDescendentsWithUncles(t *testing.T) {
 		return
 	}
 
-	log.SetLogLevel(log.DEBUG)
 	// add an uncle block to blockchain
 	ancestor, uncle := extendChainWithUncle(c, t)	
 	if uncle == nil {
@@ -846,7 +1043,6 @@ func TestBlockChainConsensusDescendentsWithUnclesInBatch(t *testing.T) {
 		return
 	}
 
-	log.SetLogLevel(log.DEBUG)
 	// add an uncle block to blockchain
 	ancestor, uncle1 := extendChainWithUncle(c, t)	
 	_, uncle2 := extendChainWithUncle(c, t)	
@@ -962,5 +1158,125 @@ func TestBlockChainConsensusDescendentsMaxBlocksSystem(t *testing.T) {
 		if len(descendents) != 100 {
 			t.Errorf("did not limit descendents to max system limit: %d", len(descendents))
 		}
+	}
+}
+
+func TestBlockChainConsensusAncestorMaxBeforeGenesis(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(10, ancestor.(*block), c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// fetch ancestor from current tip
+	if block, err := c.Ancestor(c.tip.Hash(), 10); err != nil {
+		t.Errorf("failed to get ancestor: %s", err)
+	} else {
+		if *block.Hash() != *ancestor.Hash() {
+			t.Errorf("incorrect look back:\nExpected %x\nFound %x", *ancestor.Hash(), *block.Hash())
+		}
+	}
+}
+
+func TestBlockChainConsensusAncestorMaxPastGenesis(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(10, ancestor.(*block), c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// fetch ancestor from current tip
+	if block, err := c.Ancestor(c.tip.Hash(), 100); err != nil {
+		t.Errorf("failed to get ancestor: %s", err)
+	} else {
+		if *block.Hash() != *c.genesisNode.hash() {
+			t.Errorf("incorrect look back:\nExpected %x\nFound %x", *c.genesisNode.hash(), *block.Hash())
+		}
+	}
+}
+
+func TestBlockChainConsensusAncestorInvalidBlock(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(10, ancestor.(*block), c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// fetch ancestor for non existing block tip
+	if b, err := c.Ancestor(core.BytesToByte64([]byte("some invalid hash")), 10); err == nil {
+		t.Errorf("failed to detect invalid block in Ancestor")
+	} else if b != nil {
+		t.Errorf("expecting nil Ancestor for invalid hash")
+	}
+}
+
+func TestBlockChainConsensusAncestorGenesisBlock(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+
+	// add an ancestor block to chain
+	ancestor := c.NewCandidateBlock()
+	if err := addBlock(ancestor, c); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// add few blocks to chain
+	if err := addChain(c, makeBlocks(10, ancestor.(*block), c)); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	// fetch ancestor for genesis block tip
+	if b, err := c.Ancestor(c.genesisNode.hash(), 10); err == nil || err.(*core.CoreError).Code() != ERR_INVALID_ARG {
+		t.Errorf("failed to detect genesis block in Ancestor: %s", err)
+	} else if b != nil {
+		t.Errorf("expecting nil Ancestor for genesis hash")
 	}
 }

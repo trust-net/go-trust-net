@@ -2,6 +2,7 @@ package counter
 
 import (
 //	"math/big"
+//    "sync"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/core"
 //	"github.com/trust-net/go-trust-net/common"
@@ -49,12 +50,17 @@ type CountrProtocolManager struct {
 //	miner *core.SimpleNodeInfo
 	miner *core.Byte64
 	stateDb db.Database
+	isInShutdown bool
+//	lock sync.RWMutex
+//	nodes map[*protocol.Node]bool
 }
 
 // create a new instance of countr protocol manager
 func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 	mgr := CountrProtocolManager{
 		miner: core.BytesToByte64([]byte(miner)),
+		isInShutdown: false,
+//		nodes: make(map[*protocol.Node]bool),
 //		genesis: core.NewSimpleBlock(core.BytesToByte64(nil), 0, 0, genesisTimeStamp, core.NewSimpleNodeInfo("")),
 	}
 	mgr.logger = log.NewLogger(mgr)
@@ -84,6 +90,7 @@ func NewCountrProtocolManager(miner string) *CountrProtocolManager {
 		return nil
     } else {
 	    	mgr.engine = engine
+	    	handshakeMsg.Genesis = *engine.Genesis()
     }
 	mgr.SetDb(db.NewPeerSetDbInMemory())
 	return &mgr
@@ -120,6 +127,13 @@ func (mgr *CountrProtocolManager) Shutdown() {
 //	if err := mgr.chain.Shutdown(); err != nil {
 //		mgr.logger.Error("Failed to cleanly shutdown chain DB: %s", err.Error())
 //	}
+//    // diconnect with all peers
+//	mgr.lock.Lock()
+//    for node,_ := range mgr.nodes {
+//	    	node.Peer().Disconnect(p2p.DiscQuitting)
+//    }
+//	mgr.lock.Unlock()
+	mgr.isInShutdown = true
 	mgr.stateDb.Close()
 	mgr.logger.Debug("shutting down counter protocol manager")
 }
@@ -144,27 +158,28 @@ func getTransactionFromPayload(data []byte) (string, *core.Byte8) {
 	return string(data[8:]), core.BytesToByte8(data[:8])	
 } 
 
-func (mgr *CountrProtocolManager) delta(name string, opCode *core.Byte8) bool {
+func (mgr *CountrProtocolManager) delta(name string, opCode *core.Byte8, delta int) bool {
 	// create new block and add to my blockchain
 	block := mgr.engine.NewCandidateBlock()
-	current, err := mgr.countr(name, block)
-	if err != nil {
-		mgr.logger.Error("Failed to get current countr value: %s", err)
-		// using default value
-//		return false
-	}
-	result := false
-	switch *opCode {
-		case *OpIncrement:
-			result = block.Update([]byte(name), core.Uint64ToByte8(current+1).Bytes())
-		case *OpDecrement:
-			result = block.Update([]byte(name), core.Uint64ToByte8(current-1).Bytes())
-	}
-	if result {
-		result = block.AddTransaction(consensus.NewTransaction(makeTransactionPayload(name, opCode), mgr.miner)) == nil
+//	current, _ := mgr.countr(name, block)
+//	if err != nil {
+//		mgr.logger.Error("Failed to get current countr value: %s", err)
+//		// using default value
+////		return false
+//	}
+	for ;delta > 0; delta-- {
+		current, _ := mgr.countr(name, block)
+		switch *opCode {
+			case *OpIncrement:
+				block.Update([]byte(name), core.Uint64ToByte8(current+1).Bytes())
+			case *OpDecrement:
+				block.Update([]byte(name), core.Uint64ToByte8(current-1).Bytes())
+		}
+		block.AddTransaction(consensus.NewTransaction(makeTransactionPayload(name, opCode), mgr.miner))
 	}
 	// submit block for mining
 	done := make(chan struct{})
+	result := false
 	mgr.engine.MineCandidateBlock(block, func(block consensus.Block, err error) {
 			result = err == nil
 			defer func() {
@@ -188,34 +203,26 @@ func (mgr *CountrProtocolManager) delta(name string, opCode *core.Byte8) bool {
 }
 
 func (mgr *CountrProtocolManager) Increment(name string, delta int) (uint64) {
-//	if countr, err := mgr.Countr(name); err != nil {
-//		return nil, err
-//	} else {
-//		mgr.logger.Debug("Incrementing network counter from '%d' --> '%d'", countr, countr+uint64(delta))
-		for delta > 0 {
-			if  mgr.delta(name, OpIncrement) {
-				delta--
-			} else {
-				return 0
-			}
+	for delta > 0 {
+		if  mgr.delta(name, OpIncrement, 1) {
+			delta--
+		} else {
+			return 0
 		}
-//	}
+	}
+//	mgr.delta(name, OpIncrement, delta)
 	return mgr.Countr(countrName)
 }
 
 func (mgr *CountrProtocolManager) Decrement(name string, delta int) (uint64) {
-//	if countr, err := mgr.Countr(name); err != nil {
-//		return nil, err
-//	} else {
-//		mgr.logger.Debug("Incrementing network counter from '%d' --> '%d'", countr, countr-uint64(delta))
-		for delta > 0 {
-			if  mgr.delta(name, OpDecrement) {
-				delta--
-			} else {
-				return 0
-			}
+	for delta > 0 {
+		if  mgr.delta(name, OpDecrement, 1) {
+			delta--
+		} else {
+			return 0
 		}
-//	}
+	}
+//	mgr.delta(name, OpIncrement, delta)
 	return mgr.Countr(countrName)
 }
 
@@ -234,21 +241,27 @@ func (mgr *CountrProtocolManager) broadCast(block consensus.Block) int {
 
 func (mgr *CountrProtocolManager) getHandshakeMsg(best consensus.Block) *protocol.HandshakeMsg {
 	handshakeMsg.TotalWeight = *best.Weight()
+	handshakeMsg.TipNumeric = *core.Uint64ToByte8(best.Numeric())
 	return &handshakeMsg
 }
 
-func (mgr *CountrProtocolManager) syncNode(node *protocol.Node) error {
+func isSyncNeeded(best consensus.Block, node *protocol.Node) bool {
+	return node.Status().TotalWeight.Uint64() > best.Weight().Uint64() ||
+		(node.Status().TotalWeight.Uint64() == best.Weight().Uint64() &&
+			node.Status().TipNumeric.Uint64() < best.Numeric())
+}
+
+func (mgr *CountrProtocolManager) syncNode(best consensus.Block, node *protocol.Node) error {
 	// check if need sync
-	best := mgr.engine.BestBlock()
-	if node.Status().TotalWeight.Uint64() <= best.Weight().Uint64() {
+	mgr.logger.Debug("sync: peer Weight/Numeric '%d'/'%d' vs our Weight/Numeric '%d'/'%d'",
+		node.Status().TotalWeight.Uint64(), node.Status().TipNumeric.Uint64(), best.Weight().Uint64(), best.Numeric())
+	if !isSyncNeeded(best, node) {
 		return nil
 	}
 	// lets assume our tip is the last known to us block on main blockchain
 	node.LastHash = best.Hash()
 	// wait until sync completes, or an error
-	for node.Status().TotalWeight.Uint64() > best.Weight().Uint64() {
-		mgr.logger.Debug("Requesting sync: peer weight '%d' > our weight '%d'",
-			node.Status().TotalWeight.Uint64(), best.Weight().Uint64())
+	for !mgr.isInShutdown && isSyncNeeded(best, node) {
 		// request sync starting from the genesis block (in case there was a fork with better chain)
 		if err := node.Send(GetBlockHashesRequest, GetBlockHashesRequestMsg{
 				ParentHash: *node.LastHash,
@@ -273,7 +286,9 @@ func (mgr *CountrProtocolManager) syncNode(node *protocol.Node) error {
 //				mgr.logger.Debug("Syncing with peer '%s' done", node.ID())
 				return nil
 		}
-		best = mgr.engine.BestBlock()
+		if !mgr.isInShutdown {
+			best = mgr.engine.BestBlock()
+		}
 	}
 	mgr.logger.Debug("Syncing with peer '%s' done", node.ID())
 	return nil
@@ -290,105 +305,56 @@ func (mgr *CountrProtocolManager) listen(peer *protocol.Node) error {
 			case GetBlockHashesRequest:
 				// handle the sync request message to fetch hashes
 				if err := mgr.handleGetBlockHashesRequestMsg(msg, peer); err != nil {
-					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case GetBlockHashesResponse:
 				// handle the sync response message with hashes
 				if err := mgr.handleGetBlockHashesResponseMsg(msg, peer); err != nil {
-					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case GetBlockHashesRewind:
 				// handle the sync rewind message
 				if err := mgr.handleGetBlockHashesRewindMsg(msg, peer); err != nil {
-					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case GetBlocksRequest:
 				// handle sync request to fetch block specs
 				if err := mgr.handleGetBlocksRequestMsg(msg, peer); err != nil {
-					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case GetBlocksResponse:
 				// handle sync request to fetch block specs
 				if err := mgr.handleGetBlocksResponseMsg(msg, peer); err != nil {
-					mgr.logger.Error("Error: %s", err.Error())
 					return err
 				}
 			case NewBlock:
 				// handle new block announcement
 				if err := mgr.handleNewBlockMsg(msg, peer); err != nil {
-					peer.Peer().Log().Error("Error: %s", err.Error())
 					return err
 				}
 			default:
 				// error condition, unknown protocol message
 				err := protocol.NewProtocolError(protocol.ErrorUnknownMessageType, "unknown protocol message recieved")
-				mgr.logger.Error("Error: %s", err.Error())
 				return err
 		}
 	}
 }
 
-//func (mgr *CountrProtocolManager) processBlockSpec(spec *core.BlockSpec, from *protocol.Node) (int64, *core.Byte64, error) {
-//		block := core.NewSimpleBlockFromSpec(spec)
-//		var delta int64
-//		switch block.Transactions()[0].Uint64() {
-//			case opIncrement:
-//				delta = 1
-//			case opDecrement:
-//				delta = -1
-//			default:
-//				mgr.logger.Error("Invalid opcode '%d' from '%s'", block.Transactions()[0].Uint64(), from.ID())
-//				return 0, nil, protocol.NewProtocolError(protocol.ErrorInvalidResponse, "GetBlocksResponseMsg has invalid opcode")
-//		}
-//		// add network block to our blockchain
-//		if err := mgr.chain.AddNetworkNode(block); err != nil {
-//			mgr.logger.Error("Failed to add new block from '%s'", from.ID())
-//			return delta, block.Hash(), err
-//		}
-//		// mark the sender has having seen this message
-//		from.AddTx(block.Hash())
-//		// broadcast message to other peers
-//		mgr.broadCast(block)
-//		// update our counter
-//		return delta, block.Hash(), nil	
-//}
-
 func (mgr *CountrProtocolManager) handleGetBlockHashesRewindMsg(msg p2p.Msg, from *protocol.Node) error {
-	// this message simply means our node needs to be manually restarted with clean slate
-	mgr.logger.Error("manual flush needed due to rewind message recieved from '%s'", from.ID())
-	return protocol.NewProtocolError(protocol.ErrorInvalidResponse, "need manual rewind")
-//	var rewindHash GetBlockHashesRewindMsg
-//	if err := msg.Decode(&rewindHash); err != nil {
-//		return protocol.NewProtocolError(protocol.ErrorInvalidResponse, err.Error())
-//	}
-//	// validate that specified hash is in our DB
-//	hash := core.Byte64(rewindHash)
-//	if blockNode, found := mgr.chain.BlockNode(&hash); !found {
-//		// peer tried to misdirect us to invalid hash
-//		mgr.logger.Debug("Invalid rewind hash '%x' from '%s'", hash, from.ID())
-//		from.GetBlockHashesChan <- protocol.CHAN_ABORT
-//		return protocol.NewProtocolError(protocol.ErrorInvalidResponse, "invalid hash in rewind msg")
-//	} else {
-//		// rewind to specified hash and restart sync
-//		mgr.logger.Debug("Rewinding back to hash '%x' as suggested by '%s'", hash, from.ID())
-//		from.LastHash = blockNode.Hash()
-//		// ideally we want to reset world state to the world state corresponding to block node
-//		// but for POC Iteration 1 we are just going back to genesis and restarting
-//		if *blockNode.Hash() != *mgr.genesis.Hash() {
-//			mgr.logger.Debug("Rewind hash provided does not match genesis, from '%s'", from.ID())
-//			from.GetBlockHashesChan <- protocol.CHAN_ABORT
-//			return protocol.NewProtocolError(protocol.ErrorInvalidResponse, "rewind hash does not match genesis")
-//		}
-//		mgr.state.Countr = 0
-//		mgr.saveState()
-//		mgr.chain.Flush()
-//		from.GetBlockHashesChan <- protocol.CHAN_RETRY
-//	}
-//	return nil
+	// find an ancestor to current tip and retry sync
+	if from.LastHash == nil {
+		from.LastHash = mgr.engine.BestBlock().Hash()
+	}
+	// walk back 10 ancestors and retry
+	if ancestor, err := mgr.engine.Ancestor(from.LastHash, 10); err != nil {
+		mgr.logger.Error("Failed to rewind back from hash '%x'", *from.LastHash)
+		return err
+	} else {
+		from.LastHash = ancestor.Hash()
+	}
+	mgr.logger.Debug("Rewinding back to hash '%x'", *from.LastHash)
+	from.GetBlockHashesChan <- protocol.CHAN_RETRY
+	return nil
 }
 
 func (mgr *CountrProtocolManager) processBlock(block consensus.Block, from *protocol.Node) error {
@@ -400,12 +366,7 @@ func (mgr *CountrProtocolManager) processBlock(block consensus.Block, from *prot
 			mgr.logger.Error("Invalid transaction: %s", tx)
 			return core.NewCoreError(consensus.ERR_INVALID_TX, "transaction error")
 		}
-		current, err := mgr.countr(name, block)
-		if err != nil {
-			mgr.logger.Error("Failed to get current countr value: %s", err)
-			// using default value
-	//		return false
-		}
+		current, _ := mgr.countr(name, block)
 		switch *opCode {
 			case *OpIncrement:
 				result = block.Update([]byte(name), core.Uint64ToByte8(current+1).Bytes())
@@ -421,7 +382,6 @@ func (mgr *CountrProtocolManager) processBlock(block consensus.Block, from *prot
 	}
 	// submit block for acceptance
 	if err := mgr.engine.AcceptNetworkBlock(block); err != nil {
-		mgr.logger.Error("%s: Could not accept network block: %s", from.ID(), err)
 		return err
 	} else {
 		// mark the sender has having seen this message
@@ -443,6 +403,7 @@ func (mgr *CountrProtocolManager) handleNewBlockMsg(msg p2p.Msg, from *protocol.
 	} else {
 		// process the block
 		if err := mgr.processBlock(block, from); err != nil && err.(*core.CoreError).Code() != consensus.ERR_DUPLICATE_BLOCK {
+			mgr.logger.Error("%s: Could not accept new block: %s", from.ID(), err)
 			// abort sync
 			from.GetBlockHashesChan <- protocol.CHAN_ERROR
 			return err
@@ -531,6 +492,7 @@ func (mgr *CountrProtocolManager) handleGetBlocksResponseMsg(msg p2p.Msg, from *
 			return err
 		}
 		if err := mgr.processBlock(block, from); err != nil && err.(*core.CoreError).Code() != consensus.ERR_DUPLICATE_BLOCK {
+			mgr.logger.Error("%s: Could not accept sync block: %s", from.ID(), err)
 			// abort sync
 			from.GetBlockHashesChan <- protocol.CHAN_ERROR
 			return err
@@ -555,11 +517,11 @@ func (mgr *CountrProtocolManager) handleGetBlockHashesRequestMsg(msg p2p.Msg, fr
 	mgr.logger.Debug("Syncing: request to fetch '%d' hashes after '%x'", request.MaxBlocks.Uint64(), request.ParentHash)
 	// fetch hashes from blockchain DB
 //	blocks := mgr.chain.Blocks(&request.ParentHash, request.MaxBlocks.Uint64())
-	blocks, err := mgr.engine.Descendents(&request.ParentHash, int(request.MaxBlocks.Uint64()))
-	if err != nil {
-		mgr.logger.Debug("failed to fetch descendents:", err)
-		return err
-	}
+	blocks, _ := mgr.engine.Descendents(&request.ParentHash, int(request.MaxBlocks.Uint64()))
+//	if err != nil {
+//		mgr.logger.Error("failed to fetch descendents: %s", err)
+//		return err
+//	}
 	mgr.logger.Debug("Syncing: sending '%d' blocks to '%s'", len(blocks), from.ID())
 	if len(blocks) < 1 {
 		// no blocks to send
@@ -625,7 +587,8 @@ func (mgr *CountrProtocolManager) Protocol() p2p.Protocol {
 				node := protocol.NewNode(peer, ws)
 				
 				// initiate handshake with the new peer
-				if err := mgr.Handshake(mgr.getHandshakeMsg(mgr.engine.BestBlock()), node); err != nil {
+				myBest := mgr.engine.BestBlock()
+				if err := mgr.Handshake(mgr.getHandshakeMsg(myBest), node); err != nil {
 					mgr.logger.Error("%s: %s", peer.Name(), err)
 					return err
 				} else {
@@ -641,13 +604,15 @@ func (mgr *CountrProtocolManager) Protocol() p2p.Protocol {
 
 				// check and perform a sync based on total weight
 				go func() {
-					if err := mgr.syncNode(node); err != nil {
+					if err := mgr.syncNode(myBest, node); err != nil {
 						mgr.logger.Error("Sync failed: '%s'", err)
 					}
 				}()
 				
 				// start the listener for this node
-				mgr.listen(node)
+				if err := mgr.listen(node); err != nil {
+					mgr.logger.Error("Disconnecting node: %s, Reason: %s", node.Id() ,err.Error())
+				}
 				return nil
 			},
 	}

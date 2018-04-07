@@ -28,6 +28,9 @@ func RunTimeBound(sec time.Duration, method func () error, timeoutError error) e
 	return err
 }
 
+func RunTimeBoundSec(sec int, method func () error, timeoutError error) error {
+	return RunTimeBound(time.Duration(sec), method, timeoutError)
+}
 
 func Serialize(entity interface{}) ([]byte, error) {
 	b := bytes.Buffer{}

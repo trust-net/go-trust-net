@@ -54,7 +54,7 @@ func NewBlockChainConsensus(genesisTime uint64,
 	chain.logger = log.NewLogger(chain)
 
 	// genesis is statically defined using default values
-	genesisBlock := newBlock(genesisParent, 0, 0, genesisTime, core.BytesToByte64(nil), chain.state)
+	genesisBlock := newBlock(genesisParent, 0, 0, genesisTime, 0, core.BytesToByte64(nil), chain.state)
 	genesisBlock.computeHash()
 	chain.genesisNode = newChainNode(genesisBlock)
 	chain.genesisNode.setMainList(true)
@@ -99,11 +99,15 @@ func NewBlockChainConsensus(genesisTime uint64,
 	return &chain, nil
 }
 
+// return the genesis block
+func (c *BlockChainConsensus) Genesis() *core.Byte64 {
+	return c.genesisNode.hash()
+}
+
 // return the tip of current canonical blockchain
 func (c *BlockChainConsensus) Tip() Block {
 	return c.tip
 }
-
 
 func (chain *BlockChainConsensus) getChainNode(hash *core.Byte64) (*chainNode, error) {
 	if data, err := chain.db.Get(tableKey(tableChainNode, hash)); err != nil {
@@ -131,6 +135,7 @@ func (chain *BlockChainConsensus) getBlock(hash *core.Byte64) (*block, error) {
 			chain.logger.Error("failed to decode data from DB: %s", err.Error())
 			return nil, err
 		}
+		block.hash = core.BytesToByte64(hash.Bytes())
 //		chain.logger.Debug("fetched block from DB: %x", *hash)
 		return block, nil
 	}
@@ -171,7 +176,8 @@ func (c *BlockChainConsensus) NewCandidateBlock() Block {
 	}
 	
 	// create a new candidate block instance initialized as child of current canonical chain tip
-	b := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, uint64(time.Now().UnixNano()), c.minerId, state)
+	ts := uint64(time.Now().UnixNano())
+	b := newBlock(c.Tip().Hash(), c.Tip().Weight().Uint64() + 1, c.Tip().Depth().Uint64() + 1, ts, ts-c.Tip().Timestamp().Uint64(), c.minerId, state)
 
 	// add mining reward for miner node in this block's world view
 	// TODO
@@ -242,6 +248,13 @@ func (c *BlockChainConsensus) findNonDirectAncestors(childNode *core.Byte64, rem
 	return uncles
 }
 
+func (c *BlockChainConsensus) MineCandidateBlockPoW(b Block, apprvr PowApprover, cb MiningResultHandler) {
+	blk := b.(*block)
+	blk.pow = apprvr
+	go c.mineCandidateBlock(blk, cb)
+}
+
+
 // submit a "filled" block for mining (executes as a goroutine)
 // it will mine the block and update canonical chain or abort if a new network block
 // is received with same or higher weight, the callback MiningResultHandler will be called
@@ -271,25 +284,39 @@ func (c *BlockChainConsensus) mineCandidateBlock(child *block, cb MiningResultHa
 		}
 		// return raw block, so that protocol layer can update "seen" node set with hash of the block
 		cb(child, nil)
-		c.logger.Debug("%s: Successfully mined block: %x", *c.minerId, *child.Hash())
+		c.logger.Debug("Successfully mined block: %x", *child.Hash())
 	}
 }
 
 // query status of a transaction (its block details) in the canonical chain
-func (c *BlockChainConsensus) TransactionStatus(tx *Transaction) (Block, error) {
+func (c *BlockChainConsensus) TransactionStatus(txId *core.Byte64) (Block, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
+//	return c.transactionStatus(tx)
+	block,_, err := c.transactionStatus(txId)
+	return block, err
+}
+
+func (c *BlockChainConsensus) transactionStatus(txId *core.Byte64) (Block, *chainNode, error) {
 	// lookup transaction in the current canonical chain
-	if hash, err := c.state.HasTransaction(tx.Id()); err != nil {
-		c.logger.Debug("Transaction does not exists: %x", tx.Id())
-		return nil, core.NewCoreError(ERR_TX_NOT_FOUND, "transaction not found")
+	if hash, err := c.state.HasTransaction(txId); err != nil {
+		c.logger.Debug("Transaction does not exists: %x", *txId)
+		return nil, nil, core.NewCoreError(ERR_TX_NOT_FOUND, "transaction not found")
 	} else 
+	// verify if the block is on canonical chain
+	if node, err := c.getChainNode(hash); err != nil {
+		c.logger.Error("Failed to get chain node for transaction: %s", err)
+		return nil, nil, core.NewCoreError(ERR_DB_CORRUPTED, "error reading transaction's chain node")
+	} else if !node.isMainList() {
+		c.logger.Debug("Transaction not on canonical chain: %x", *txId)
+		return nil, node, core.NewCoreError(ERR_TX_NOT_APPLIED, "transaction not on canonical chain")
+	} else
 	// find the block that finalized the transaction
 	if block, err := c.getBlock(hash); err != nil {
 		c.logger.Error("Failed to get block for transaction: %s", err)
-		return nil, core.NewCoreError(ERR_DB_CORRUPTED, "error reading transaction's block")
+		return nil, node, core.NewCoreError(ERR_DB_CORRUPTED, "error reading transaction's block")
 	} else {
-		return block, nil
+		return block, node, nil
 	}
 }
 
@@ -330,7 +357,7 @@ func (c *BlockChainConsensus) isUncleValid(child *block, uHash *core.Byte64) boo
 			uncle, _ = c.getChainNode(uncle.Parent)
 			distance++
 		}
-		c.logger.Debug("Found uncle at distance: %d", distance)
+//		c.logger.Debug("Found uncle at distance: %d", distance)
 //		return parent != nil && uncle != nil && (child.Depth().Uint64() - parent.Depth <  maxUncleDistance)
 		return parent != nil && uncle != nil && (distance <=  maxUncleDistance)
 	}
@@ -379,8 +406,6 @@ func (c *BlockChainConsensus) validateBlock(b Block) (*block, error) {
 func (c *BlockChainConsensus) DeserializeNetworkBlock(data []byte) (Block, error) {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
-//	var block, parent *block
-//	var err error
 	if block, err := deSerializeBlock(data); err != nil {
 		c.logger.Error("failed to deserialize network block's data: %s", err.Error())
 		return nil, err
@@ -388,21 +413,6 @@ func (c *BlockChainConsensus) DeserializeNetworkBlock(data []byte) (Block, error
 		// process the block
 		return c.processNetworkBlock(block)
 	}
-//	// set the network flag on block
-//	block.isNetworkBlock = true
-//
-//	// validate block
-//	if parent, err = c.validateBlock(block); err != nil {
-//		return nil, err
-//	}
-//	// initialze block's world state to parent's world state
-//	state := trie.NewMptWorldState(c.db)
-//	if err = state.Rebase(parent.STATE); err != nil {
-//		c.logger.Error("failed to initialize network block's world state: %s", err.Error())
-//		return nil, core.NewCoreError(ERR_STATE_INCORRECT, "cannot initialize state")
-//	}
-//	block.worldState = state
-//	return block, nil
 }
 
 func (c *BlockChainConsensus) DecodeNetworkBlock(msg p2p.Msg) (Block, error) {
@@ -427,11 +437,14 @@ func (c *BlockChainConsensus) DecodeNetworkBlockSpec(spec BlockSpec) (Block, err
 			STATE: spec.STATE,
 			TXs: make([]Transaction, len(spec.TXs)),
 			TS: spec.TS,
+			DELTA: spec.DELTA,
 			DEPTH: spec.DEPTH,
 			WT: spec.WT,
 			UNCLEs: make([]core.Byte64, len(spec.UNCLEs)),
 			NONCE: spec.NONCE,
 		},
+		variables: make(map[string][]byte),
+		transactions: make(map[core.Byte64]bool),
 	}
 	for i,tx := range spec.TXs {
 		newBlock.TXs[i] = tx
@@ -446,7 +459,6 @@ func (c *BlockChainConsensus) DecodeNetworkBlockSpec(spec BlockSpec) (Block, err
 func (c *BlockChainConsensus) processNetworkBlock(b *block) (Block, error) {
 	// set the network flag on block
 	b.isNetworkBlock = true
-	b.computeHash()
 
 	// validate block
 	var parent *block
@@ -460,7 +472,7 @@ func (c *BlockChainConsensus) processNetworkBlock(b *block) (Block, error) {
 		c.logger.Error("failed to initialize network block's world state: %s", err.Error())
 		return nil, core.NewCoreError(ERR_STATE_INCORRECT, "cannot initialize state")
 	}
-	b.worldState = state
+	b.worldState = state	
 	return b, nil
 }
 
@@ -476,6 +488,9 @@ func (c *BlockChainConsensus) AcceptNetworkBlock(b Block) error {
 	if parent, err = c.validateBlock(b); err != nil {
 		return err
 	}
+	// run PoW on the network block
+	b.(*block).computeHash()
+
 	// validate that computed state by application matches deserialized state of the block
 	if b.(*block).worldState.Hash() != b.(*block).STATE {
 		c.logger.Error("computed world state of network block incorrect")
@@ -484,21 +499,24 @@ func (c *BlockChainConsensus) AcceptNetworkBlock(b Block) error {
 	return c.addValidatedBlock(b.(*block), parent)
 }
 
-func computeNum(hash *core.Byte64) uint64 {
-	num := uint64(0)
-	for _, b := range hash.Bytes() {
-		num += uint64(b)
-	}
-	return num
-}
-
 // block has been validated (either mined local block, or processed network block) 
 func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 	// verify that this is not a duplicate block
 	var err error
 	if _, err = c.getChainNode(child.Hash()); err == nil {
-		c.logger.Error("block already exists: %x", *child.Hash())
+		c.logger.Debug("block already exists: %x", *child.Hash())
 		return core.NewCoreError(ERR_DUPLICATE_BLOCK, "duplicate block")
+	}
+	// verify that block is not introducing a duplicate transactions in the canonical chain
+	for _, tx := range child.Transactions() {
+//		c.logger.Debug("Checking pre-existing transaction: %x", *tx.Id())
+		if b, n, _ := c.transactionStatus(tx.Id());  b != nil && n != nil &&
+			(n.isMainList() ||
+				(b.Weight().Uint64() > child.Weight().Uint64() ||
+					(b.Weight().Uint64() == child.Weight().Uint64() && b.Numeric() < child.Numeric()))) {
+			c.logger.Debug("Transaction already exists with block: %x", *b.Hash())
+			return core.NewCoreError(ERR_DUPLICATE_TX, "duplicate transaction")
+		} 
 	}
 	// add the new child node into our data store
 	childNode := newChainNode(child)
@@ -515,8 +533,8 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 	c.logger.Debug("adding a new block at depth '%d' in the block chain", childNode.depth())
 	// compare current main list weight with weight of new node's list
 	// to find if main list needs rebalancing
-	if c.weight < childNode.weight() || (c.weight == childNode.weight() && computeNum(c.tip.Hash()) > computeNum(childNode.hash())) {
-		c.logger.Debug("rebalancing the block chain after new block addition")
+	if c.weight < childNode.weight() || (c.weight == childNode.weight() && c.tip.Numeric() > child.Numeric()) {
+//		c.logger.Debug("rebalancing the block chain after new block addition")
 		// move depth and tip of blockchain
 		c.weight = childNode.weight()
 		c.tip = child
@@ -526,7 +544,12 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 		}
 		// change the world state
 		if err := c.state.Rebase(child.STATE); err != nil {
-			return core.NewCoreError(ERR_DB_CORRUPTED, "failed to update world state")
+			c.logger.Error("failed to register transaction: %s", err)
+			return err
+		}
+		// register transactions for the block
+		if err := child.registerTransactions(); err != nil {
+			return core.NewCoreError(ERR_DB_CORRUPTED, "failed to update tip in DB")
 		}
 		
 		// walk up the ancestor list setting them up as main list nodes
@@ -536,6 +559,11 @@ func (c *BlockChainConsensus) addValidatedBlock(child, parent *block) error {
 		for !parentNode.isMainList() {
 			parentNode.setMainList(true)
 			c.putChainNode(parentNode)
+			// update transactions for the block
+			if b, err := c.getBlock(parentNode.hash()); err == nil {
+				b.worldState = c.state
+				b.registerTransactions()
+			}
 			mainListParent = parentNode
 			parentNode, _ = c.getChainNode(parentNode.parent())
 		}
@@ -595,6 +623,25 @@ func (c *BlockChainConsensus) BestBlock() Block {
 		return nil
 	}
 	return c.tip.clone(state)
+}
+
+// the ancestor at max distance from specified child
+func (c *BlockChainConsensus) Ancestor(child *core.Byte64, max int) (Block, error) {
+	if *child == *c.genesisNode.hash() {
+		return nil, 	core.NewCoreError(ERR_INVALID_ARG, "no ancestor for genesis")
+	}
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	var lastBlock = Block(nil)
+	var node *chainNode
+	var err error
+	for node, err = c.getChainNode(child); err == nil && node.depth() > 0 && max > 0; {
+		if lastBlock, err = c.getBlock(node.parent()); err == nil {
+			node, err = c.getChainNode(node.parent())
+		}
+		max--
+	}
+	return lastBlock, err
 }
 
 // ordered list of serialized descendents from specific parent, on the current canonical chain

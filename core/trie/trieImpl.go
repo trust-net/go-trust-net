@@ -25,6 +25,7 @@ type node struct {
 
 var tableTransactionRootByWorldState = []byte("TransactionRootByWorldState-")
 var tableTransactionNode = []byte("MptTransactionNode-")
+var tableTransactionFlatKV = []byte("MptTransactionFlatKV-")
 var tableMptWorldStateNode = []byte("MptWorldStateNode-")
 func tableKey(prefix []byte, key *core.Byte64) []byte {
 	return append(prefix, key.Bytes()...)
@@ -144,6 +145,20 @@ func (t *MptWorldState) HasTransaction(txId *core.Byte64) (*core.Byte64, error) 
 	// get lock
 	t.lock.RLock()
 	defer t.lock.RUnlock()
+//	return t.hasTransactionInTrie(txId)
+	return t.hasTransactionInFlatKV(txId)
+}
+
+func (t *MptWorldState) hasTransactionInFlatKV(txId *core.Byte64) (*core.Byte64, error) {
+	if data, err := t.db.Get(tableKey(tableTransactionFlatKV, txId)); err != nil {
+		t.logger.Debug("Did not find transaction in DB: %s", err.Error())
+		return nil, err
+	} else {
+		return core.BytesToByte64(data), nil
+	}
+}
+
+func (t *MptWorldState) hasTransactionInTrie(txId *core.Byte64) (*core.Byte64, error) {
 	// convert key into hexadecimal nibbles
 	keyHex := makeHex(txId.Bytes())
 	// lookup transaction
@@ -158,6 +173,15 @@ func (t *MptWorldState) RegisterTransaction(txId, blockId *core.Byte64) error {
 	// get lock
 	t.lock.Lock()
 	defer t.lock.Unlock()
+//	return t.registerTransactionToTrie(txId, blockId)
+	return t.registerTransactionToFlatKV(txId, blockId)
+}
+
+func (t *MptWorldState) registerTransactionToFlatKV(txId, blockId *core.Byte64) error {
+	return t.db.Put(tableKey(tableTransactionFlatKV, txId), blockId.Bytes())
+}
+
+func (t *MptWorldState) registerTransactionToTrie(txId, blockId *core.Byte64) error {
 	// convert key into hexadecimal nibbles
 	keyHex := makeHex(txId.Bytes())
 	// first get transaction trie root for current world view
@@ -170,6 +194,7 @@ func (t *MptWorldState) RegisterTransaction(txId, blockId *core.Byte64) error {
 		}
 		// mark tombstone on old transaction trie root
 		t.tombStone(t.putTx, t.txNode)
+		t.cleanupDepthFirst(t.deleteTx, t.getTx, t.txNode)
 //		t.logger.Debug("Switching transaction trie root:\nOld %x\nNew %x", *t.txNode.hash(), *txNodeCopy.hash())
 		// switch to new transaction trie root
 		t.txNode = &txNodeCopy
@@ -377,7 +402,7 @@ func (t *MptWorldState) Rebase(hash core.Byte64) error {
 		t.logger.Error("Failed to rebase world state to hash %x", hash)
 		return core.NewCoreError(ERR_NOT_FOUND, "hash does not exists")
 	} else {
-		t.logger.Debug("Found node to rebase %x", hash)
+//		t.logger.Debug("Found node to rebase %x", hash)
 		// node exists, so find the transaction trie root for this node
 		var txNode *node
 		if txNode, _ = t.getNode(tableKey(tableTransactionRootByWorldState, &hash)); txNode == nil {
@@ -402,9 +427,9 @@ func (t *MptWorldState) Rebase(hash core.Byte64) error {
 		t.putNode(tableKey(tableTransactionRootByWorldState, t.rootHash), t.txNode)
 		t.rootHash = &hash
 		t.rootNode = rootNode
-		t.logger.Info("Rebased world state to hash %x", hash)
+//		t.logger.Info("Rebased world state to hash %x", hash)
 		t.txNode = txNode
-		t.logger.Info("Rebased transaction trie hash %x", *txNode.hash())
+//		t.logger.Info("Rebased transaction trie hash %x", *txNode.hash())
 	}
 	return nil
 }

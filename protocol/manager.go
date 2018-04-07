@@ -105,6 +105,8 @@ func (mgr *ManagerBase) Handshake(status *HandshakeMsg, peer *Node) error {
 			return NewProtocolError(ErrorHandshakeFailed, "network ID does not match")
 		case handshake.ShardId != status.ShardId:
 			return NewProtocolError(ErrorHandshakeFailed, "shard ID does not match")
+		case handshake.Genesis != status.Genesis:
+			return NewProtocolError(ErrorHandshakeFailed, "genesis does not match")
 	}
 
 	// add the peer into our DB

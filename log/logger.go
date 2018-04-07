@@ -47,6 +47,9 @@ func GetLogLevel() uint {
 
 var logfile *os.File
 var lock sync.RWMutex
+func GetLogFile() *os.File {
+	return getLogFile()
+}
 func getLogFile() *os.File {
 	if logfile == nil {
 		lock.Lock()

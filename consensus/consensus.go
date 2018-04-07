@@ -8,8 +8,11 @@ import (
 // a callback provided by application to handle results of block mining request
 // block instance is provided (to update nodeset with hash), if successful, or error is provided if failed/aborted
 type MiningResultHandler func(block Block, err error)
-//// serialized block is provided, if successful, or error is provided if failed/aborted
-//type MiningResultHandler func(data []byte, err error)
+// a callback provided by application to approve PoW
+// (arguments include block's timestamp and delta time since parent block,
+// so that application can implement variable PoW schemes based on time when
+// block was generated and time since its parent)
+type PowApprover	func(hash []byte, ts, delta uint64) bool
 
 // a consensus platform interface
 type Consensus interface {
@@ -22,8 +25,10 @@ type Consensus interface {
 	// with serialized data for the block that can be  sent over the wire to peers,
 	// or error if mining failed/aborted
 	MineCandidateBlock(b Block, cb MiningResultHandler)
+	// a PoW variant of the MineCandidateBlock method
+	MineCandidateBlockPoW(b Block, apprvr PowApprover, cb MiningResultHandler)
 	// query status of a transaction (its block details) in the canonical chain
-	TransactionStatus(tx *Transaction) (Block, error)
+	TransactionStatus(txId *core.Byte64) (Block, error)
 	// deserialize data into network block, and will initialize the block with current canonical parent's
 	// world state root (application is responsible to run the transactions from block, and update
 	// world state appropriately)
@@ -38,9 +43,12 @@ type Consensus interface {
 	AcceptNetworkBlock(b Block) error
     // a copy of best block in current cannonical chain, used by protocol manager for handshake
     BestBlock() Block
+    // genesis Hash
+    Genesis() *core.Byte64
     // a copy of block with specified hash, or error if not found
     Block(hash *core.Byte64) (Block, error)
-    // ordered list of serialized descendents from specific parent, on the current canonical chain
-//    Descendents(parent *core.Byte64, max int) ([][]byte, error)
+    // ordered list of descendents from specific parent, on the current canonical chain
     Descendents(parent *core.Byte64, max int) ([]Block, error)
+    // the ancestor at max distance from specified child
+    Ancestor(child *core.Byte64, max int) (Block, error)
 }
