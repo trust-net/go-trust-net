@@ -14,7 +14,7 @@ import (
 var previous = core.BytesToByte64([]byte("previous"))
 var testMiner = core.BytesToByte64([]byte("some random miner"))
 var testUncle = core.BytesToByte64([]byte("some random uncle"))
-var testSubmitter = core.BytesToByte64([]byte("some random submitter"))
+var testSubmitter = []byte("some random submitter")
 
 func testTransaction(payload string) *Transaction {
 	return &Transaction{

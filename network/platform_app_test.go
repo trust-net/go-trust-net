@@ -44,9 +44,9 @@ func testTwoApps(t *testing.T) {
 	time.Sleep(1000 * time.Millisecond)
 	// submit transaction to mgr1
 	txPayload := []byte("test tx payload")
-	txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-	txSignature := core.BytesToByte64([]byte("test rx signature"))
-	txId := mgr1.Submit(txPayload, txSubmitter, txSignature)
+	txSubmitter := []byte("test rx submitter")
+	txSignature := []byte("test rx signature")
+	txId := mgr1.Submit(txPayload, txSignature, txSubmitter)
 	// sleep for some time, for transaction to be processed
 	time.Sleep(1000 * time.Millisecond)
 	if _, err = mgr2.Status(txId); err != nil {
@@ -112,11 +112,11 @@ func TestPlatformManagerState(t *testing.T) {
 		testTx{"decr", "bananas", 5},
 	}
 	txIds := make([]core.Byte64, 0, len(txs))
-	txSubmitter := core.BytesToByte64([]byte("test tx submitter"))
+	txSubmitter := []byte("test tx submitter")
 	for _, tx := range txs {
 		txPayload, _ := common.Serialize(tx)
-		txSignature := core.BytesToByte64([]byte("test rx signature"))
-		txIds = append(txIds, *mgr.Submit(txPayload, txSubmitter, txSignature))
+		txSignature := []byte("test rx signature")
+		txIds = append(txIds, *mgr.Submit(txPayload, txSignature, txSubmitter))
 		// sleep for some time, for transaction to be processed
 		time.Sleep(100 * time.Millisecond)
 	}

@@ -22,7 +22,7 @@ type KeyPair struct {
 
 const cmdPrompt = "Command: "
 
-var myId = &core.Byte64{}
+var myId []byte
 //var peers = make(map[string]*network.AppConfig)
 // define a transaction payload structure
 type testTx struct {
@@ -99,9 +99,9 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 									fmt.Printf("usage: incr <countr name> [<integer>]\n")
 								}
 							}
-							// submit a transaction to increment counter
+							// submit an unsigned transaction to increment counter
 							if err == nil {
-								counterMgr.Submit(incrementTx(name, delta), myId, core.BytesToByte64(nil))
+								counterMgr.Submit(incrementTx(name, delta), nil, myId)
 							}
 						}
 					case "decr":
@@ -117,9 +117,9 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 									fmt.Printf("usage: decr <countr name> [<integer>]\n")
 								}
 							}
-							// submit a transaction to decrement counter
+							// submit an unsigned transaction to decrement counter
 							if err == nil {
-								counterMgr.Submit(decrementTx(name, delta), myId, core.BytesToByte64(nil))
+								counterMgr.Submit(decrementTx(name, delta), nil, myId)
 							}
 						}
 					case "peers":
@@ -159,6 +159,7 @@ func main() {
 		return
 	}
 	config, _ := config.Config()
+	myId = []byte(*config.Id())
 	fmt.Printf("Starting node, listening on %s...\n", *config.Port())
 	log.SetLogLevel(log.DEBUG)
 	// build a transaction processor using above defined payload

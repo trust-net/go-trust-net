@@ -54,9 +54,9 @@ func TestNewPlatformManagerInterface(t *testing.T) {
 	}
 	// submit transaction
 	txPayload := []byte("test tx payload")
-	txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-	txSignature := core.BytesToByte64([]byte("test rx signature"))
-	txId := mgr.Submit(txPayload, txSubmitter, txSignature)
+	txSubmitter := ([]byte("test rx submitter"))
+	txSignature := []byte("test rx signature")
+	txId := mgr.Submit(txPayload, txSignature, txSubmitter)
 	// sleep for some time, for transaction to be processed
 	time.Sleep(100 * time.Millisecond)
 	if _, err = mgr.Status(txId); err != nil {
@@ -356,9 +356,9 @@ func TestPlatformManagerSubmitTx(t *testing.T) {
 	} else {
 		// submit transaction
 		txPayload := []byte("test tx payload")
-		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-		txSignature := core.BytesToByte64([]byte("test rx signature"))
-		mgr.Submit(txPayload, txSubmitter, txSignature)
+		txSubmitter := ([]byte("test rx submitter"))
+		txSignature := []byte("test rx signature")
+		mgr.Submit(txPayload, txSignature, txSubmitter)
 		// hack, call to processTx should actually be from block producer go routine
 		mgr.processTx(<- mgr.txQ, mgr.engine.NewCandidateBlock())
 		if !called {
@@ -395,9 +395,9 @@ func TestPlatformManagerBlockProducer(t *testing.T) {
 		go mgr.blockProducer()
 		// submit transaction
 		txPayload := []byte("test tx payload")
-		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-		txSignature := core.BytesToByte64([]byte("test rx signature"))
-		mgr.Submit(txPayload, txSubmitter, txSignature)
+		txSubmitter := ([]byte("test rx submitter"))
+		txSignature := []byte("test rx signature")
+		mgr.Submit(txPayload, txSignature, txSubmitter)
 		// sleep a bit, hoping transaction will get processed till then
 		time.Sleep(100 * time.Millisecond)
 		mgr.shutdownBlockProducer <- true
@@ -464,9 +464,9 @@ func TestPlatformManagerBlockProducerMultipleTransactions(t *testing.T) {
 		// submit multiple transactions transaction
 		for i := 0; i<5; i++ {
 			txPayload := []byte("test tx payload")
-			txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-			txSignature := core.BytesToByte64([]byte("test rx signature"))
-			mgr.Submit(txPayload, txSubmitter, txSignature)
+			txSubmitter := ([]byte("test rx submitter"))
+			txSignature := []byte("test rx signature")
+			mgr.Submit(txPayload, txSignature, txSubmitter)
 		}
 		// sleep a bit, one block should be produced by then
 		time.Sleep(100 * time.Millisecond)
@@ -503,9 +503,9 @@ func TestPlatformManagerBlockProducerMaxTransactionsPerBlock(t *testing.T) {
 		// submit multiple transactions transaction
 		for i := 0; i<15; i++ {
 			txPayload := []byte("test tx payload")
-			txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-			txSignature := core.BytesToByte64([]byte("test rx signature"))
-			mgr.Submit(txPayload, txSubmitter, txSignature)
+			txSubmitter := ([]byte("test rx submitter"))
+			txSignature := []byte("test rx signature")
+			mgr.Submit(txPayload, txSignature, txSubmitter)
 		}
 		// sleep a bit, two block should be produced by then
 		time.Sleep(100 * time.Millisecond)
@@ -545,9 +545,9 @@ func TestPlatformManagerPowCallback(t *testing.T) {
 		go mgr.blockProducer()
 		// submit transaction
 		txPayload := []byte("test tx payload")
-		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-		txSignature := core.BytesToByte64([]byte("test rx signature"))
-		mgr.Submit(txPayload, txSubmitter, txSignature)
+		txSubmitter := ([]byte("test rx submitter"))
+		txSignature := []byte("test rx signature")
+		mgr.Submit(txPayload, txSignature, txSubmitter)
 		// sleep a bit, hoping transaction will get processed till then
 		time.Sleep(100 * time.Millisecond)
 		mgr.shutdownBlockProducer <- true
@@ -583,9 +583,9 @@ func testPlatformManagerPowTimeout(t *testing.T) {
 		go mgr.blockProducer()
 		// submit transaction
 		txPayload := []byte("test tx payload")
-		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-		txSignature := core.BytesToByte64([]byte("test rx signature"))
-		txId := mgr.Submit(txPayload, txSubmitter, txSignature)
+		txSubmitter := []byte("test rx submitter")
+		txSignature := []byte("test rx signature")
+		txId := mgr.Submit(txPayload, txSignature, txSubmitter)
 		finished := false
 		go func() {
 			fmt.Printf("Waiting for timeout .")

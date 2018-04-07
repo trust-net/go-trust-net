@@ -88,12 +88,12 @@ func (tx *Transaction) Payload() []byte {
 }
 
 // provide submitter's public key
-func (tx *Transaction) Submitter() *core.Byte64 {
+func (tx *Transaction) Submitter() []byte {
 	return tx.Transaction.Submitter
 }
 
 // provide signature of the payload
-func (tx *Transaction) Signature() *core.Byte64 {
+func (tx *Transaction) Signature() []byte {
 	return tx.Transaction.Signature
 }
 
