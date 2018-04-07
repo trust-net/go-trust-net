@@ -60,11 +60,15 @@ func TestTransactionBytes(t *testing.T) {
 func TestNewTransaction(t *testing.T) {
 	payload := []byte("some data")
 	submitter := core.BytesToByte64([]byte("some random submitter"))
-	tx := NewTransaction(payload, submitter)
+	signature := core.BytesToByte64([]byte("some random signature"))
+	tx := NewTransaction(payload, submitter, signature)
 	if string(tx.Payload) != "some data" {
 		t.Errorf("incorrect payload: '%s'", tx.Payload)
 	}
 	if *tx.Submitter != *submitter {
 		t.Errorf("incorrect submitter: %s", *tx.Submitter)
+	}
+	if *tx.Signature != *signature {
+		t.Errorf("incorrect signature: %s", *tx.Signature)
 	}
 }

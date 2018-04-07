@@ -77,13 +77,24 @@ func (s *State) GetAllKeys() ([][]byte, error) {
 }
 
 type Transaction struct {
-	payload []byte
+//	payload []byte
+	consensus.Transaction
 	block consensus.Block
 }
 
 // provide application submitted transaction payload
 func (tx *Transaction) Payload() []byte {
-	return tx.payload
+	return tx.Transaction.Payload
+}
+
+// provide submitter's public key
+func (tx *Transaction) Submitter() *core.Byte64 {
+	return tx.Transaction.Submitter
+}
+
+// provide signature of the payload
+func (tx *Transaction) Signature() *core.Byte64 {
+	return tx.Transaction.Signature
 }
 
 // lookup a key in current world state view

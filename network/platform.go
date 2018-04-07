@@ -25,7 +25,7 @@ type PlatformManager interface {
 	// get a snapshot of current world state
 	State() *State
 	// submit a transaction payload, and get a transaction ID
-	Submit(txPayload []byte, submitter *core.Byte64) *core.Byte64
+	Submit(txPayload []byte, submitter, signature *core.Byte64) *core.Byte64
 	// get a list of current peers
 	Peers() []AppConfig
 	// disconnect a specific peer
@@ -156,9 +156,9 @@ func (mgr *platformManager) State() *State {
 	}
 }
 
-func (mgr *platformManager) Submit(txPayload []byte, submitter *core.Byte64) *core.Byte64 {
+func (mgr *platformManager) Submit(txPayload []byte, submitter, signature *core.Byte64) *core.Byte64 {
 	// create an instance of transaction
-	tx := consensus.NewTransaction(txPayload, submitter)
+	tx := consensus.NewTransaction(txPayload, submitter, signature)
 	// put transaction into the queue
 	mgr.txQ <- tx
 	// return the transaction ID for status check by application
@@ -781,8 +781,10 @@ func (mgr *platformManager) blockProducer() {
 
 // should be called by the background block producer go routine
 func (mgr *platformManager) processTx(tx *consensus.Transaction, block consensus.Block) bool {
+	// validate signature of the transaction
+	// TBD
 	return mgr.config.TxProcessor(&Transaction{
-		payload: tx.Payload,
+		Transaction: *tx,
 		block: block,
 	})
 }

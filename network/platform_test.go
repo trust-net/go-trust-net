@@ -55,7 +55,8 @@ func TestNewPlatformManagerInterface(t *testing.T) {
 	// submit transaction
 	txPayload := []byte("test tx payload")
 	txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-	txId := mgr.Submit(txPayload, txSubmitter)
+	txSignature := core.BytesToByte64([]byte("test rx signature"))
+	txId := mgr.Submit(txPayload, txSubmitter, txSignature)
 	// sleep for some time, for transaction to be processed
 	time.Sleep(100 * time.Millisecond)
 	if _, err = mgr.Status(txId); err != nil {
@@ -356,7 +357,8 @@ func TestPlatformManagerSubmitTx(t *testing.T) {
 		// submit transaction
 		txPayload := []byte("test tx payload")
 		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-		mgr.Submit(txPayload, txSubmitter)
+		txSignature := core.BytesToByte64([]byte("test rx signature"))
+		mgr.Submit(txPayload, txSubmitter, txSignature)
 		// hack, call to processTx should actually be from block producer go routine
 		mgr.processTx(<- mgr.txQ, mgr.engine.NewCandidateBlock())
 		if !called {
@@ -394,7 +396,8 @@ func TestPlatformManagerBlockProducer(t *testing.T) {
 		// submit transaction
 		txPayload := []byte("test tx payload")
 		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-		mgr.Submit(txPayload, txSubmitter)
+		txSignature := core.BytesToByte64([]byte("test rx signature"))
+		mgr.Submit(txPayload, txSubmitter, txSignature)
 		// sleep a bit, hoping transaction will get processed till then
 		time.Sleep(100 * time.Millisecond)
 		mgr.shutdownBlockProducer <- true
@@ -462,7 +465,8 @@ func TestPlatformManagerBlockProducerMultipleTransactions(t *testing.T) {
 		for i := 0; i<5; i++ {
 			txPayload := []byte("test tx payload")
 			txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-			mgr.Submit(txPayload, txSubmitter)
+			txSignature := core.BytesToByte64([]byte("test rx signature"))
+			mgr.Submit(txPayload, txSubmitter, txSignature)
 		}
 		// sleep a bit, one block should be produced by then
 		time.Sleep(100 * time.Millisecond)
@@ -500,7 +504,8 @@ func TestPlatformManagerBlockProducerMaxTransactionsPerBlock(t *testing.T) {
 		for i := 0; i<15; i++ {
 			txPayload := []byte("test tx payload")
 			txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-			mgr.Submit(txPayload, txSubmitter)
+			txSignature := core.BytesToByte64([]byte("test rx signature"))
+			mgr.Submit(txPayload, txSubmitter, txSignature)
 		}
 		// sleep a bit, two block should be produced by then
 		time.Sleep(100 * time.Millisecond)
@@ -512,97 +517,6 @@ func TestPlatformManagerBlockProducerMaxTransactionsPerBlock(t *testing.T) {
 		}
 		if post.Depth().Uint64() != pre.Depth().Uint64()+2 {
 			t.Errorf("did not produce 2 blocks")
-		}
-	}
-}
-
-func TestPlatformManagerTransactionStatus(t *testing.T) {
-	log.SetLogLevel(log.NONE)
-	defer log.SetLogLevel(log.NONE)
-	db, _ := db.NewDatabaseInMem()
-	var block consensus.Block
-	conf := testNetworkConfig(func(tx *Transaction) bool{
-			block = tx.block
-			return true
-		}, nil, nil)
-	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
-		t.Errorf("Failed to create platform manager: %s", err)
-	} else {
-		// override timeout
-		maxTxWaitSec = 100 * time.Millisecond
-		// start block producer
-		go mgr.blockProducer()
-		// submit transaction
-		txPayload := []byte("test tx payload")
-		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-		txId := mgr.Submit(txPayload, txSubmitter)
-		// sleep a bit, hoping transaction will get processed till then
-		time.Sleep(100 * time.Millisecond)
-		mgr.shutdownBlockProducer <- true
-		// query status of the transaction
-		if txBlock, err := mgr.Status(txId); err != nil {
-			t.Errorf("Failed to get transaction status: %s", err)
-		} else if *txBlock.Hash() != *block.Hash() {
-			t.Errorf("submitted transaction's block incorrect: %s", err)
-		}
-	}
-}
-
-func TestPlatformManagerUnknownTransactionStatus(t *testing.T) {
-	log.SetLogLevel(log.NONE)
-	defer log.SetLogLevel(log.NONE)
-	db, _ := db.NewDatabaseInMem()
-	conf := testNetworkConfig(func(tx *Transaction) bool{
-			return true
-		}, nil, nil)
-	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
-		t.Errorf("Failed to create platform manager: %s", err)
-	} else {
-		// override timeout
-		maxTxWaitSec = 100 * time.Millisecond
-		// start block producer
-		go mgr.blockProducer()
-		// submit transaction
-		txPayload := []byte("test tx payload")
-		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-		mgr.Submit(txPayload, txSubmitter)
-		txId := core.BytesToByte64([]byte("some random transaction Id"))
-		// sleep a bit, hoping transaction will get processed till then
-		time.Sleep(100 * time.Millisecond)
-		mgr.shutdownBlockProducer <- true
-		// query status of the transaction
-		if _, err := mgr.Status(txId); err == nil || err.(*core.CoreError).Code() != consensus.ERR_TX_NOT_FOUND {
-			t.Errorf("Failed to detect unknown transaction")
-		}
-	}
-}
-
-func TestPlatformManagerRejectedTransactionStatus(t *testing.T) {
-	log.SetLogLevel(log.NONE)
-	defer log.SetLogLevel(log.NONE)
-	db, _ := db.NewDatabaseInMem()
-	conf := testNetworkConfig(func(tx *Transaction) bool{
-			return false
-		}, nil, nil)
-	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
-		t.Errorf("Failed to create platform manager: %s", err)
-	} else {
-		// override timeout
-		maxTxWaitSec = 100 * time.Millisecond
-		// start block producer
-		go mgr.blockProducer()
-		// submit transaction
-		txPayload := []byte("test tx payload")
-		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-		txId := mgr.Submit(txPayload, txSubmitter)
-		// sleep a bit, hoping transaction will get processed till then
-		time.Sleep(100 * time.Millisecond)
-		mgr.shutdownBlockProducer <- true
-		// query status of the transaction
-		if txBlock, err := mgr.Status(txId); err == nil || err.(*core.CoreError).Code() != consensus.ERR_TX_NOT_APPLIED {
-			t.Errorf("Failed to detect rejected transaction")
-		} else if txBlock != nil {
-			t.Errorf("rejected transaction should have nil block")
 		}
 	}
 }
@@ -632,7 +546,8 @@ func TestPlatformManagerPowCallback(t *testing.T) {
 		// submit transaction
 		txPayload := []byte("test tx payload")
 		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-		mgr.Submit(txPayload, txSubmitter)
+		txSignature := core.BytesToByte64([]byte("test rx signature"))
+		mgr.Submit(txPayload, txSubmitter, txSignature)
 		// sleep a bit, hoping transaction will get processed till then
 		time.Sleep(100 * time.Millisecond)
 		mgr.shutdownBlockProducer <- true
@@ -646,7 +561,7 @@ func TestPlatformManagerPowCallback(t *testing.T) {
 	}
 }
 
-func TestPlatformManagerPowTimeout(t *testing.T) {
+func testPlatformManagerPowTimeout(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
@@ -669,7 +584,8 @@ func TestPlatformManagerPowTimeout(t *testing.T) {
 		// submit transaction
 		txPayload := []byte("test tx payload")
 		txSubmitter := core.BytesToByte64([]byte("test rx submitter"))
-		txId := mgr.Submit(txPayload, txSubmitter)
+		txSignature := core.BytesToByte64([]byte("test rx signature"))
+		txId := mgr.Submit(txPayload, txSubmitter, txSignature)
 		finished := false
 		go func() {
 			fmt.Printf("Waiting for timeout .")

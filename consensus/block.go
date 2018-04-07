@@ -6,7 +6,6 @@ import (
 	"crypto/sha512"
 	"encoding/gob"
 	"github.com/trust-net/go-trust-net/core"
-	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/core/trie"
 	"github.com/trust-net/go-trust-net/common"
 )
@@ -98,8 +97,6 @@ func (b *block) Update(key, value []byte) bool {
 	defer b.lock.Unlock()
 	b.variables[string(key)] = append(make([]byte, 0, len(value)), value...)
 	return true
-//	hash := b.worldState.Hash()
-//	return b.worldState.Update(key, value) != hash
 }
 
 func (b *block) Delete(key []byte) bool {
@@ -169,7 +166,6 @@ func (b *block) persistState() error {
 	skippedParentState := false
 	// update variables
 	for key, value := range b.variables {
-		log.AppLogger().Info("State update: key '%s', value '%s'", key, value)
 		oldHash := b.worldState.Hash()
 		var newHash core.Byte64
 		if value == nil {
@@ -179,18 +175,14 @@ func (b *block) persistState() error {
 		}
 		// if hash did not change, skip
 		if  newHash == oldHash {
-			log.AppLogger().Info("State did not change!!!")
 			continue
 		}
 		// cleanup old transient hash (non parent hash)
 		if skippedParentState {
 			if err := b.worldState.Cleanup(oldHash); err != nil {
-				log.AppLogger().Error("Failed to cleanup state: %s", err)
-			} else {
-				log.AppLogger().Info("cleaned up stale state")				
+//				log.AppLogger().Error("Failed to cleanup state: %s", err)
 			}
 		} else {
-			log.AppLogger().Info("skipping cleanup of parent state")
 			skippedParentState = true
 		}
 	}
@@ -200,8 +192,6 @@ func (b *block) persistState() error {
 
 // block hash = SHA512(parent_hash + author_node + timestamp + state + depth + transactions... + weight + uncles... + nonce)
 func (b *block) computeHash() *core.Byte64 {
-//	log.AppLogger().Info("START OF MINING...")
-//	defer log.AppLogger().Info("...END OF MINING")
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	// parent hash +
@@ -223,11 +213,9 @@ func (b *block) computeHash() *core.Byte64 {
 	if b.worldState != nil {
 		// persist the world state
 		if b.persistState() != nil {
-//			log.AppLogger().Error("FAILED TO PERSIST STATE")
 			// return error value
 			return nil
 		}
-//		log.AppLogger().Info("DONE PERSIST STATE")
 		// if its not network block, then update state
 		if !b.isNetworkBlock {
 			b.STATE = b.worldState.Hash()
@@ -235,10 +223,8 @@ func (b *block) computeHash() *core.Byte64 {
 		state := b.worldState.Hash()
 		statePtr = &state
 	} else {
-//		log.AppLogger().Info("DID NOT PERSIST STATE")
 		statePtr = &b.STATE
 	}
-//	data = append(data, b.STATE.Bytes()...)
 	data = append(data, statePtr.Bytes()...)
 	for _, tx := range b.TXs {
 		data = append(data, tx.Bytes()...)
@@ -252,7 +238,6 @@ func (b *block) computeHash() *core.Byte64 {
 	var hash [sha512.Size]byte
 	isPoWDone := false
 
-//	log.AppLogger().Info("start of PoW...")
 	// run the tight loop below in a timeout thread
 	err := common.RunTimeBoundSec(computeHashTimeoutSec, func() error {
 			for !isPoWDone {
@@ -279,13 +264,7 @@ func (b *block) computeHash() *core.Byte64 {
 	if err != nil {
 		return nil
 	}
-//	log.AppLogger().Info("... end of PoW")
 	b.hash = core.BytesToByte64(hash[:])
-	// this needs to be moved to consensus engine, to update whenever a block is added/re-added to canonical chain
-//	// update the world state with this block's transactions
-//	if b.registerTransactions() != nil {
-//		b.hash = nil
-//	}
 	return b.hash
 }
 
@@ -321,12 +300,6 @@ func (b *block) clone(state trie.WorldState) *block {
 		variables: make(map[string][]byte),
 		transactions: make(map[core.Byte64]bool),
 	}
-//	for key, value := range b.variables {
-//		clone.variables[key] = append(make([]byte, 0, len(value)), value...)
-//	}
-//	for key, value := range b.transactions {
-//		clone.transactions[key] = value
-//	}
 	return clone
 }
 
@@ -427,8 +400,6 @@ func deSerializeBlock(data []byte) (*block, error) {
 	b.isNetworkBlock = true
 	b.variables = make(map[string][]byte)
 	b.transactions = make(map[core.Byte64]bool)
-
-//	b.computeHash()
 
 	// Q: when, where, who to update world state with this block's value changes?
 	// A: application will validate transactions, at which time world state will be updated with values

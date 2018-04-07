@@ -745,7 +745,7 @@ func TestBlockChainConsensus(t *testing.T) {
 		candidate := myChain.NewCandidateBlock()
 		// add a transaction every 7th count
 		if (counter+1) % 7 == 0 {
-			candidate.AddTransaction(NewTransaction([]byte("some payload"), myNode))
+			candidate.AddTransaction(NewTransaction([]byte("some payload"), myNode, core.BytesToByte64([]byte("some random signature"))))
 		}
 
 		// create a mining callback handler for this candidate block

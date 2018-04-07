@@ -101,7 +101,7 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 							}
 							// submit a transaction to increment counter
 							if err == nil {
-								counterMgr.Submit(incrementTx(name, delta), myId)
+								counterMgr.Submit(incrementTx(name, delta), myId, core.BytesToByte64(nil))
 							}
 						}
 					case "decr":
@@ -119,7 +119,7 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 							}
 							// submit a transaction to decrement counter
 							if err == nil {
-								counterMgr.Submit(decrementTx(name, delta), myId)
+								counterMgr.Submit(decrementTx(name, delta), myId, core.BytesToByte64(nil))
 							}
 						}
 					case "peers":
@@ -187,11 +187,10 @@ func main() {
 	}
 	// define a pow approver for application
 	powApprover := func(hash []byte, blockTs, parentTs uint64) bool {
-//		// make sure first 4 bytes are 0x00
-//		return hash[0] == 0x00 && hash[1] == 0x00 && hash[3] == 0x00 && hash[4] == 0x00
-		td := 2
+		// make sure first n bytes are 0x00
+		n := 2
 		result := true
-		for i := 0; i < td; i++ {
+		for i := 0; i < n; i++ {
 			result = result && hash[i] == 0x00
 		}
 		return result

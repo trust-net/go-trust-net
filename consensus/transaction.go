@@ -10,6 +10,7 @@ type Transaction struct {
 	Payload []byte
 	Timestamp *core.Byte8
 	Submitter *core.Byte64
+	Signature *core.Byte64
 }
 
 func (tx *Transaction) Id() *core.Byte64 {
@@ -26,11 +27,12 @@ func (tx *Transaction) Bytes() []byte {
 	return data
 }
 
-func NewTransaction(payload []byte, submitter *core.Byte64) *Transaction {
+func NewTransaction(payload []byte, submitter, signature *core.Byte64) *Transaction {
 	tx := Transaction {
 		Payload: make([]byte, 0, len(payload)),
 		Timestamp: core.Uint64ToByte8(uint64(time.Now().UnixNano())),
 		Submitter: core.BytesToByte64(submitter.Bytes()),
+		Signature: core.BytesToByte64(signature.Bytes()),
 	}
 	tx.Payload = append(tx.Payload, payload...)
 	return &tx
