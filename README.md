@@ -34,20 +34,19 @@ This is the reason TrustNet was created and designed from ground up as _"DLT sta
 * Native Decentralized Application with custom DLT capabilities
 
 ## How TrustNet Works?
-* Provides application driven DLT library
-* Abstracts protocol and consensus into library implementation
+* Abstracts p2p protocol and consensus algorithm into library
 * Allows application complete control over transaction processing
-* Library manages “world state” based on consensus automtically
+* Library automatically adjusts “world state” based on consensus
 ```
 Application (transaction business logic)
      /\
      ||
      \/
-Consensus Platform (protocol layer)
+DLT Consensus Platform (protocol layer)
      /\
      ||
      \/
-DAG Consensus Engine (consensus layer)
+DLT Consensus Engine (consensus layer)
 ```
 
 ## DLT Comparison
