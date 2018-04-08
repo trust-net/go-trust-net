@@ -15,9 +15,10 @@ Above properties make it very difficult, if not impossible, to build **decentral
 * a strong and well known identity of the user
 * application level privacy and encryption of transactions
 * DLT support in native applications
-* multi-network applications
+* custom/exensible DLT capabilities
+* applications using multiple decentralized ledgers
 
-This is the reason TrustNet was created and designed from ground up _"DLT stack as a library"_, making it possible to build DLT based native applications.
+This is the reason TrustNet was created and designed from ground up as _"DLT stack as a library"_, making it possible to build decentralized native applications.
 
 ## What TrustNet Does?
 **For Users:**
@@ -30,12 +31,13 @@ This is the reason TrustNet was created and designed from ground up _"DLT stack 
 **For Applications:**
 * A public Identity Management Network
 * Private applications using strong public identities
+* Native Decentralized Application with custom DLT capabilities
 
 ## How TrustNet Works?
 * Provides application driven DLT library
-* Abstracts protocol and consensus into layers
-* Manages “world state” based on consensus
-
+* Abstracts protocol and consensus into library implementation
+* Allows application complete control over transaction processing
+* Library manages “world state” based on consensus automtically
 ```
 Application (transaction business logic)
      /\
@@ -51,8 +53,8 @@ DAG Consensus Engine (consensus layer)
 ## DLT Comparison
 |Feature|TrustNet|Ethereum|
 |----|----|----|
-|Objective|Identity and privacy|Smart contracts|
-|Identity Model|Strong Public identity, BYOI Identity management system|Anonymous private identities|
-|Privacy Model|Strong privacy, application level encryption|Public transactions|
-|Application Model|Application is the driver|Application is a plugin|
+|Objective|Identity and privacy, Native DApps|Smart contracts based DApps|
+|Identity Model|Strong Public identity, BYOI IMS|Anonymous private identities|
+|Privacy Model|Strong privacy, application level encryption|Public/non-private transactions|
+|Application Model|Native (full control) DApp|EVM bytecode based DApp|
 |DLT Stack Model|Multi-network, stack as a library|single network, stack as the controller|
