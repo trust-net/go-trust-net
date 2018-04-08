@@ -47,3 +47,12 @@ Consensus Platform (protocol layer)
      \/
 DAG Consensus Engine (consensus layer)
 ```
+
+## DLT Comparison
+|Feature|TrustNet|Ethereum|
+|----|----|----|
+|Objective|Identity and privacy|Smart contracts|
+|Identity Model|Strong Public identity, BYOI Identity management system|Anonymous private identities|
+|Privacy Model|Strong privacy, application level encryption|Public transactions|
+|Application Model|Application is the driver|Application is a plugin|
+|DLT Stack Model|Multi-network, stack as a library|single network, stack as the controller|
