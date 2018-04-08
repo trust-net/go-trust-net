@@ -11,13 +11,13 @@ Before we answer this question, lets re-cap what current blockchain networks off
 * Applications as "second-class" citizen
 * Single ledger network as the applications controller
 
-Above properties make it very difficult, if not impossible, to build **decentralized enterprise applications** that require following:
+Above properties make it very difficult, if not impossible, to build **decentralized native applications** that require following:
 * a strong and well known identity of the user
 * application level privacy and encryption of transactions
 * DLT support in native applications
 * multi-network applications
 
-This is the reason TrustNet was created and designed from ground up _"DLT stack as a library"_, making it possible to build DLT support into native applications.
+This is the reason TrustNet was created and designed from ground up _"DLT stack as a library"_, making it possible to build DLT based native applications.
 
 ## What TrustNet Does?
 **For Users:**
