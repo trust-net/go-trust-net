@@ -9,7 +9,7 @@ Before we answer this question, lets re-cap what current blockchain networks off
 * Anonymous private identities
 * Promiscuous public transactions
 * Applications as "second-class" citizen
-* Single ledger network as the applications controller
+* Network as the application controller
 
 Above properties make it very difficult, if not impossible, to build **decentralized native applications** that require following:
 * a strong and well known identity of the user
