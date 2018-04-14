@@ -128,13 +128,24 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 							}
 						}
 					case "countr":
-						wordScanner.Scan()
-						if name := wordScanner.Text(); len(name) == 0 {
-							fmt.Printf("usage: countr <countr name>\n")
-						} else {
-							// get current network counter value
-							val, _ := counterMgr.State().Get([]byte(name))
-							fmt.Printf("%d", int64(core.BytesToByte8(val).Uint64()))
+						hasNext := wordScanner.Scan()
+						oneDone := false
+						for hasNext {
+							name := wordScanner.Text()
+							if len(name) != 0 {
+								if oneDone {
+									fmt.Printf("\n")
+								} else {
+									oneDone = true
+								}
+								// get current network counter value
+								val, _ := counterMgr.State().Get([]byte(name))
+								fmt.Printf("% 10s: %d", name, int64(core.BytesToByte8(val).Uint64()))
+							}
+							hasNext = wordScanner.Scan()
+						}
+						if !oneDone {
+							fmt.Printf("usage: countr <countr name> ...\n")
 						}
 					case "incr":
 						ops := scanOps(wordScanner)
