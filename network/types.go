@@ -71,6 +71,22 @@ func (s *State) Get(key []byte) ([]byte, error) {
 	return s.block.Lookup(key)
 }
 
+func (s *State) Depth() uint64 {
+	return s.block.Depth().Uint64()
+}
+
+func (s *State) Weight() uint64 {
+	return s.block.Weight().Uint64()
+}
+
+func (s *State) Tip() core.Byte64 {
+	return *s.block.Hash()
+}
+// returns number of nano seconds since Unix epoch
+func (s *State) Timestamp() uint64 {
+	return s.block.Timestamp().Uint64()
+}
+
 func (s *State) GetAllKeys() ([][]byte, error) {
 	// TODO
 	return nil, core.NewCoreError(ERR_NOT_IMPLEMENTED, "TBD")

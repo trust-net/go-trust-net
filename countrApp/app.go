@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"strconv"
 	"flag"
+	"time"
 	"fmt"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/config"
@@ -43,6 +44,55 @@ func decrementTx(name string, delta int) []byte {
 	return txPayload
 }
 
+type op struct {
+	name string
+	delta int
+}
+
+func scanOps(scanner *bufio.Scanner) (ops []op) {
+	nextToken := func() (*string, int, bool) {
+		if !scanner.Scan() {
+			return nil, 0, false
+		}
+		word := scanner.Text()
+		if delta, err := strconv.Atoi(word); err == nil {
+			return nil, delta, true
+		} else {
+			return &word, 0, true
+		}
+	}
+	ops = make([]op, 0)
+	currOp := op {}
+	readName := false
+	for {
+		name, delta, success := nextToken()
+
+		if !success {
+			if readName {
+				ops = append(ops, currOp)
+			}
+			return
+		} else if name == nil && currOp.name == "" {
+			return
+		}
+
+		if name != nil {
+			if readName {
+				ops = append(ops, currOp)
+			}
+			currOp = op {}
+			currOp.name = *name
+			currOp.delta = 1
+			readName = true
+		} else {
+			currOp.delta = delta
+			ops = append(ops, currOp)
+			currOp = op {}
+			readName = false
+		}
+	}
+}
+
 func CLI(c chan int, counterMgr network.PlatformManager) {
 	config, _ := config.Config()
 	for {
@@ -78,48 +128,43 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 							}
 						}
 					case "countr":
-						wordScanner.Scan()
-						if name := wordScanner.Text(); len(name) == 0 {
-							fmt.Printf("usage: countr <countr name>\n")
-						} else {
-							// get current network counter value
-							val, _ := counterMgr.State().Get([]byte(name))
-							fmt.Printf("%d", int64(core.BytesToByte8(val).Uint64()))
+						hasNext := wordScanner.Scan()
+						oneDone := false
+						for hasNext {
+							name := wordScanner.Text()
+							if len(name) != 0 {
+								if oneDone {
+									fmt.Printf("\n")
+								} else {
+									oneDone = true
+								}
+								// get current network counter value
+								val, _ := counterMgr.State().Get([]byte(name))
+								fmt.Printf("% 10s: %d", name, int64(core.BytesToByte8(val).Uint64()))
+							}
+							hasNext = wordScanner.Scan()
+						}
+						if !oneDone {
+							fmt.Printf("usage: countr <countr name> ...\n")
 						}
 					case "incr":
-						wordScanner.Scan()
-						if name := wordScanner.Text(); len(name) == 0 {
-							fmt.Printf("usage: incr <countr name> [<integer>]\n")
+						ops := scanOps(wordScanner)
+						if len(ops) == 0 {
+							fmt.Printf("usage: incr <countr name> [<integer>] ...\n")
 						} else {
-							wordScanner.Scan()
-							delta := 1
-							var err error
-							if word := wordScanner.Text(); len(word) != 0 {
-								if delta, err = strconv.Atoi(word); err != nil {
-									fmt.Printf("usage: incr <countr name> [<integer>]\n")
-								}
-							}
-							// submit an unsigned transaction to increment counter
-							if err == nil {
-								counterMgr.Submit(incrementTx(name, delta), nil, myId)
+							for _, op := range ops {
+								fmt.Printf("adding transaction: incr %s %d\n", op.name, op.delta)
+								counterMgr.Submit(incrementTx(op.name, op.delta), nil, myId)
 							}
 						}
 					case "decr":
-						wordScanner.Scan()
-						if name := wordScanner.Text(); len(name) == 0 {
-							fmt.Printf("usage: decr <countr name> [<integer>]\n")
+						ops := scanOps(wordScanner)
+						if len(ops) == 0 {
+							fmt.Printf("usage: decr <countr name> [<integer>] ...\n")
 						} else {
-							wordScanner.Scan()
-							delta := 1
-							var err error
-							if word := wordScanner.Text(); len(word) != 0 {
-								if delta, err = strconv.Atoi(word); err != nil {
-									fmt.Printf("usage: decr <countr name> [<integer>]\n")
-								}
-							}
-							// submit an unsigned transaction to decrement counter
-							if err == nil {
-								counterMgr.Submit(decrementTx(name, delta), nil, myId)
+							for _, op := range ops {
+								fmt.Printf("adding transaction: decr %s %d\n", op.name, op.delta)
+								counterMgr.Submit(decrementTx(op.name, op.delta), nil, myId)
 							}
 						}
 					case "peers":
@@ -130,10 +175,16 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 							fmt.Printf("%02d : \"% 10s\" : %s\n", i, peer.NodeName, peer.NodeId)
 						}
 					case "info":
+						state := counterMgr.State()
+						t := time.Unix(0,int64(state.Timestamp()))
 						fmt.Printf("#######################\n")
 						fmt.Printf("Node Name: %s\n", *config.NodeName())
 						fmt.Printf("Node ID  : %s\n", *config.Id())
 						fmt.Printf("Network  : %s\n", *config.NetworkId())
+						fmt.Printf("TIP      : %x\n", state.Tip())
+						fmt.Printf("Depth    : %d\n", state.Depth())
+						fmt.Printf("Weight   : %d\n", state.Weight())
+						fmt.Printf("Timestamp: %s\n", t.Format("Mon Jan 2 15:04:05 UTC 2006"))
 						fmt.Printf("#######################")
 					default:
 						fmt.Printf("Unknown Command: %s", cmd)

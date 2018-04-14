@@ -346,7 +346,7 @@ func (b *block) Numeric() uint64 {
 // private method, can only be invoked by DAG implementation, so can be initiaized correctly
 func newBlock(previous *core.Byte64, weight uint64, depth uint64, ts, pTs uint64, miner *core.Byte64, state trie.WorldState) *block {
 	if ts == 0 {
-		ts = uint64(time.Now().Unix())
+		ts = uint64(time.Now().UnixNano())
 	}
 	b := &block{
 		BlockSpec: BlockSpec {
