@@ -2,6 +2,7 @@ package network
 
 import (
 	"sync"
+	"fmt"
 	"time"
 	"github.com/trust-net/go-trust-net/consensus"
 	"github.com/trust-net/go-trust-net/common"
@@ -94,7 +95,7 @@ func NewPlatformManager(appConfig *AppConfig, srvConfig *ServiceConfig, appDb db
 		deadTxs: make(map[core.Byte64]bool),
 		peers: make(map[string]AppConfig),
 	}
-	mgr.logger = log.NewLogger(mgr)
+	mgr.logger = log.NewLogger(*mgr)
 
 	// configure p2p server instance
 	if err := mgr.configureP2P(); err != nil {
@@ -191,8 +192,9 @@ func (mgr *platformManager) Peers() []AppConfig {
 
 func (mgr *platformManager) Disconnect(app *AppConfig) error {
 	var err error
-	if node := mgr.peerDb.PeerNodeForId(app.NodeId); node != nil {
-		err = mgr.peerDb.UnRegisterPeerNodeForId(app.NodeId)
+	id := fmt.Sprintf("%x", app.NodeId)
+	if node := mgr.peerDb.PeerNodeForId(id); node != nil {
+		err = mgr.peerDb.UnRegisterPeerNodeForId(id)
 		node.(*peerNode).Peer().Disconnect(p2p.DiscQuitting)
 	} else {
 		err = core.NewCoreError(ErrorNotFound, "peer not found")
@@ -237,8 +239,8 @@ func (mgr *platformManager) configureP2P() error {
 		return err
 	}
 	// initialize self ID
-	mgr.config.NodeId = mgr.srv.Self().String()
-	mgr.config.minerId = core.BytesToByte64(mgr.srv.Self().ID.Bytes())
+	mgr.config.NodeId = mgr.srv.Self().ID.Bytes()
+	mgr.config.minerId = mgr.srv.Self().ID.Bytes()
 	mgr.logger.Debug("Started application node: %s", mgr.config.NodeId)
 	return nil
 }
@@ -697,7 +699,7 @@ func (mgr *platformManager) validateAndAdd(handshake *HandshakeMsg, peer PeerNod
 		// identified application's shard/group on public p2p network
 		NetworkId: handshake.NetworkId,
 		// peer's node ID, extracted from p2p connection request
-		NodeId:	peer.Id(),
+		NodeId:	peer.NodeId(),
 		// peer node's name
 		NodeName: peer.Name(),
 		// application's protocol

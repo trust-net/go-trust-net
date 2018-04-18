@@ -33,7 +33,7 @@ type PeerNode interface {
 	Peer() *p2p.Peer
 	Conn() p2p.MsgReadWriter
 	Status() *HandshakeMsg
-	NodeId() core.Byte64
+	NodeId() []byte
 	Id() string
 	Name() string
 	SetStatus(status *HandshakeMsg)
@@ -98,8 +98,8 @@ func (node *peerNode) Status() *HandshakeMsg {
 	return node.status
 }
 
-func (node *peerNode) NodeId() core.Byte64 {
-	return *core.BytesToByte64(node.peer.ID().Bytes())
+func (node *peerNode) NodeId() []byte {
+	return node.peer.ID().Bytes()
 }
 
 func (node *peerNode) Id() string {

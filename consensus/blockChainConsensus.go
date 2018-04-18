@@ -26,7 +26,7 @@ func tableKey(prefix []byte, key *core.Byte64) []byte {
 
 type uncle struct {
 	hash *core.Byte64
-	miner *core.Byte64
+	miner []byte
 	depth uint64
 	distance uint64
 }
@@ -37,7 +37,7 @@ type BlockChainConsensus struct {
 	tip *block
 	weight uint64
 	genesisNode *chainNode
-	minerId *core.Byte64
+	minerId []byte
 	db db.Database
 	lock sync.RWMutex
 	logger log.Logger
@@ -45,7 +45,7 @@ type BlockChainConsensus struct {
 
 // application is responsible to create an instance of DB initialized to application's name space
 func NewBlockChainConsensus(genesisTime uint64,
-	minerId *core.Byte64, db db.Database) (*BlockChainConsensus, error) {
+	minerId []byte, db db.Database) (*BlockChainConsensus, error) {
 	chain := BlockChainConsensus{
 		db: db,
 		minerId: minerId,
@@ -54,7 +54,7 @@ func NewBlockChainConsensus(genesisTime uint64,
 	chain.logger = log.NewLogger(chain)
 
 	// genesis is statically defined using default values
-	genesisBlock := newBlock(genesisParent, 0, 0, genesisTime, 0, core.BytesToByte64(nil), chain.state)
+	genesisBlock := newBlock(genesisParent, 0, 0, genesisTime, 0, core.BytesToByte64(nil).Bytes(), chain.state)
 	genesisBlock.computeHash()
 	chain.genesisNode = newChainNode(genesisBlock)
 	chain.genesisNode.setMainList(true)
@@ -185,7 +185,7 @@ func (c *BlockChainConsensus) NewCandidateBlock() Block {
 	// add uncles to the block
 	for _, uncle := range c.findUncles(c.Tip().ParentHash(), c.Tip().Hash(), maxUncleDistance, c.Tip().Depth().Uint64()) {
 //		c.logger.Debug("Adding %d distant uncle: %x, miner: %x", uncle.distance, *uncle.hash, *uncle.miner)
-		b.addUncle(uncle.hash)
+		b.addUncle(uncle)
 
 		// add mining reward for uncle in this block's world view
 		// TODO
@@ -278,7 +278,7 @@ func (c *BlockChainConsensus) mineCandidateBlock(child *block, cb MiningResultHa
 		}
 		// add the block
 		if err := c.addValidatedBlock(child, parent); err != nil {
-			c.logger.Debug("%s: validation failed for mined block: %x", *c.minerId, *child.Hash())
+			c.logger.Debug("%x: validation failed for mined block: %x", c.minerId, *child.Hash())
 			cb(nil, err)
 			return
 		}
@@ -325,7 +325,6 @@ func (c *BlockChainConsensus) isUncleValid(child *block, uHash *core.Byte64) boo
 	// check if uncle is known
 	if uncle, err := c.getChainNode(uHash); err != nil {
 		c.logger.Error("Failed to find uncle's chain node: %s", err)
-		return false
 	} else {
 		// find common ancestor
 		distance := uint64(0)
@@ -359,8 +358,18 @@ func (c *BlockChainConsensus) isUncleValid(child *block, uHash *core.Byte64) boo
 		}
 //		c.logger.Debug("Found uncle at distance: %d", distance)
 //		return parent != nil && uncle != nil && (child.Depth().Uint64() - parent.Depth <  maxUncleDistance)
-		return parent != nil && uncle != nil && (distance <=  maxUncleDistance)
+//		return parent != nil && uncle != nil && (distance <=  maxUncleDistance)
+		if parent != nil && uncle != nil && (distance <=  maxUncleDistance) {
+			// save miner of the uncle block
+			if uncleBlock, err := c.getBlock(uHash); err != nil {
+				c.logger.Error("Failed to find uncle's block: %s", err)
+			} else {
+				child.uncleMiners = append(child.uncleMiners, uncleBlock.Miner())
+				return true
+			}
+		}
 	}
+	return false
 }
 
 func (c *BlockChainConsensus) validateBlock(b Block) (*block, error) {

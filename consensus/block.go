@@ -16,7 +16,7 @@ var (
 
 type Block interface {
 	ParentHash() *core.Byte64
-	Miner() *core.Byte64
+	Miner() []byte
 	Nonce() *core.Byte8
 	Timestamp() *core.Byte8
 	Delta() *core.Byte8
@@ -26,6 +26,7 @@ type Block interface {
 	Delete(key []byte) bool
 	Lookup(key []byte) ([]byte, error)
 	Uncles() []core.Byte64
+	UncleMiners() [][]byte
 	Transactions() []Transaction
 	AddTransaction(tx *Transaction) error
 	Hash() *core.Byte64
@@ -37,7 +38,7 @@ type Block interface {
 // these are the fields that actually go over the wire
 type BlockSpec struct {
 	PHASH core.Byte64
-	MINER core.Byte64
+	MINER []byte
 	STATE core.Byte64
 	TXs []Transaction
 	TS core.Byte8
@@ -55,6 +56,7 @@ func init() {
 
 type block struct {
 	BlockSpec
+	uncleMiners [][]byte
 	pow PowApprover
 	worldState trie.WorldState
 	hash *core.Byte64
@@ -68,8 +70,8 @@ func (b *block) ParentHash() *core.Byte64 {
 	return &b.PHASH
 }
 
-func (b *block) Miner() *core.Byte64 {
-	return &b.MINER
+func (b *block) Miner() []byte {
+	return b.MINER
 }
 
 func (b *block) Nonce() *core.Byte8 {
@@ -128,8 +130,13 @@ func (b *block) Uncles() []core.Byte64 {
 	return b.UNCLEs
 }
 
-func (b *block) addUncle(uncle *core.Byte64) {
-	b.UNCLEs = append(b.UNCLEs, *uncle)
+func (b *block) UncleMiners() [][]byte {
+	return b.uncleMiners
+}
+
+func (b *block) addUncle(uncle uncle) {
+	b.UNCLEs = append(b.UNCLEs, *uncle.hash)
+	b.uncleMiners = append(b.uncleMiners, uncle.miner)
 	b.WT = *core.Uint64ToByte8(b.WT.Uint64()+1)
 }
 
@@ -206,7 +213,7 @@ func (b *block) computeHash() *core.Byte64 {
 	// nonce
 	data := make([]byte,0, 64+64+8+64+8+len(b.TXs)*(8+64+1)+8+len(b.UNCLEs)*64)
 	data = append(data, b.PHASH.Bytes()...)
-	data = append(data, b.MINER.Bytes()...)
+	data = append(data, b.MINER...)
 	data = append(data, b.TS.Bytes()...)
 	data = append(data, b.DELTA.Bytes()...)
 	var statePtr *core.Byte64
@@ -284,7 +291,7 @@ func (b *block) clone(state trie.WorldState) *block {
 	clone := &block{
 		BlockSpec: BlockSpec {
 			PHASH: b.PHASH,
-			MINER: b.MINER,
+			MINER: append([]byte{}, b.MINER...),
 			STATE: state.Hash(),
 			TXs: nil,
 			TS: b.TS,
@@ -307,7 +314,7 @@ func (b *block) clone(state trie.WorldState) *block {
 func (b *block) Spec() BlockSpec {
 	spec := BlockSpec{
 		PHASH: b.PHASH,
-		MINER: b.MINER,
+		MINER: append([]byte{}, b.MINER...),
 		TXs: make([]Transaction,len(b.TXs)),
 		TS: b.TS,
 		DELTA: b.DELTA,
@@ -344,14 +351,14 @@ func (b *block) Numeric() uint64 {
 }
 
 // private method, can only be invoked by DAG implementation, so can be initiaized correctly
-func newBlock(previous *core.Byte64, weight uint64, depth uint64, ts, pTs uint64, miner *core.Byte64, state trie.WorldState) *block {
+func newBlock(previous *core.Byte64, weight uint64, depth uint64, ts, pTs uint64, miner []byte, state trie.WorldState) *block {
 	if ts == 0 {
 		ts = uint64(time.Now().UnixNano())
 	}
 	b := &block{
 		BlockSpec: BlockSpec {
 			PHASH: *previous,
-			MINER: *miner,
+			MINER: miner,
 			TXs: make([]Transaction,0,1),
 			TS: *core.Uint64ToByte8(ts),
 			DELTA: *core.Uint64ToByte8(ts - pTs),
