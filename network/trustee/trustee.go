@@ -21,6 +21,8 @@ import (
 
 type Trustee interface {
 	NewMiningRewardTx(block consensus.Block) *consensus.Transaction
+	VerifyMiningRewardTx(block consensus.Block) bool
+	MiningRewardBalance(block consensus.Block, miner []byte) uint64
 }
 
 type trusteeImpl struct {
@@ -138,8 +140,28 @@ func (t *trusteeImpl) VerifyMiningRewardTx(block consensus.Block) bool {
 		return false
 	}
 
+	// validate that mining award is for block's miner
+	if string(tx.Submitter) != string(block.Miner()) {
+		t.log.Error("mining award owner is not the block miner")
+		return false
+	}
+
 	// process transaction and update block
 	return t.process(block, &tx)
+}
+
+// get node's reward balance based on world view of the block
+func (t *trusteeImpl) MiningRewardBalance(block consensus.Block, miner []byte) uint64 {
+	strVal := "0"
+	if val, err := block.Lookup([]byte(bytesToHexString(miner))); err == nil {
+		strVal = string(val)
+	}
+	var value uint64
+	var err error
+	if value, err = strconv.ParseUint(strVal, 10, 64); err != nil {
+		value = 0
+	}
+	return value
 }
 
 func credit(block consensus.Block, account []byte, amount string) {

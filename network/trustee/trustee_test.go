@@ -237,7 +237,7 @@ func TestTrusteeVerifyMiningRewardTx(t *testing.T) {
 	trustee2 := NewTrusteeApp(&mgr, nodekey2, config)
 
 	// build a mock block
-	block := newMockBlock("miner", []string{"uncle1", "uncle2"})
+	block := newMockBlock(string(trustee1.myAddress), []string{"uncle1", "uncle2"})
 	// add new mining transaction from trustee1 to block
 	tx := trustee1.NewMiningRewardTx(block)
 	block.AddTransaction(tx)
@@ -245,7 +245,6 @@ func TestTrusteeVerifyMiningRewardTx(t *testing.T) {
 	block.Update([]byte(bytesToHexString(trustee1.myAddress)), []byte("3460000"))
 	block.Update([]byte(bytesToHexString([]byte("uncle1"))), []byte("40000"))
 	// verify mining transaction with trustee2
-	log.SetLogLevel(log.DEBUG)
 	if !trustee2.VerifyMiningRewardTx(block) {
 		t.Errorf("mining reward transaction validation failed")
 	}
@@ -263,5 +262,26 @@ func TestTrusteeVerifyMiningRewardTx(t *testing.T) {
 	number, _ = strconv.ParseUint(string(val), 10, 64)
 	if number != 200000 {
 		t.Errorf("uncle2's reward not updated: %s", val)
+	}
+}
+
+
+func TestTrusteeMiningRewardBalance(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	mgr := MockPlatformManager{}
+	nodekey, _ := crypto.GenerateKey()
+	config := &network.AppConfig{}
+	trustee := NewTrusteeApp(&mgr, nodekey, config)
+
+	// build a mock block
+	block := newMockBlock(string(trustee.myAddress), []string{"uncle1", "uncle2"})
+	// set mining reward balance value in block
+	block.Update([]byte(bytesToHexString(trustee.myAddress)), []byte("3460000"))
+	// ask trustee for the mining award balance
+	log.SetLogLevel(log.DEBUG)
+	number := trustee.MiningRewardBalance(block, trustee.myAddress)
+	if number != 3460000 {
+		t.Errorf("miner's reward not correct: %d", number)
 	}
 }
