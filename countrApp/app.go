@@ -168,18 +168,19 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 							}
 						}
 					case "peers":
-						for i, peer := range counterMgr.Peers() {
+						for _, peer := range counterMgr.Peers() {
 //						i := 0
 //						for _, peer := range peers {
 //							i++
-							fmt.Printf("%02d : \"% 10s\" : %s\n", i, peer.NodeName, peer.NodeId)
+							fmt.Printf("% 10s\" [%010dT] : %x\n", "\"" + peer.NodeName, counterMgr.MiningRewardBalance(peer.NodeId), peer.NodeId)
 						}
 					case "info":
 						state := counterMgr.State()
 						t := time.Unix(0,int64(state.Timestamp()))
 						fmt.Printf("#######################\n")
 						fmt.Printf("Node Name: %s\n", *config.NodeName())
-						fmt.Printf("Node ID  : %s\n", *config.Id())
+						fmt.Printf("Node ID  : %x\n", config.Id())
+						fmt.Printf("Reward   : %010dT\n", counterMgr.MiningRewardBalance(nil))
 						fmt.Printf("Network  : %s\n", *config.NetworkId())
 						fmt.Printf("TIP      : %x\n", state.Tip())
 						fmt.Printf("Depth    : %d\n", state.Depth())
@@ -210,7 +211,7 @@ func main() {
 		return
 	}
 	config, _ := config.Config()
-	myId = []byte(*config.Id())
+	myId = config.Id()
 	fmt.Printf("Starting node, listening on %s...\n", *config.Port())
 	log.SetLogLevel(log.DEBUG)
 	// build a transaction processor using above defined payload

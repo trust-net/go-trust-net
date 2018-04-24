@@ -1,4 +1,4 @@
-package trustee
+package network
 
 import (
 	"fmt"
@@ -9,17 +9,27 @@ import (
 	"crypto/sha512"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/common"
-	"github.com/trust-net/go-trust-net/network"
 	"github.com/trust-net/go-trust-net/consensus"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
+// a trustee app for trust node mining award management
+// we are abstracting the mining award management into an "app" instead of
+// directly implementing it as part of network protocol layer, so that
+// app can be extended to add token management APIs (e.g. balance query, balance transfer, etc)
+
+type Trustee interface {
+	NewMiningRewardTx(block consensus.Block) *consensus.Transaction
+	VerifyMiningRewardTx(block consensus.Block) bool
+	MiningRewardBalance(block consensus.Block, miner []byte) uint64
+}
+
 // Implements network.Trustee interface
 type trusteeImpl struct {
 	log log.Logger
-	myMgr network.PlatformManager
+	myMgr PlatformManager
 	identity *ecdsa.PrivateKey
-	appConfig *network.AppConfig
+	appConfig *AppConfig
 	myAddress []byte
 	myReward *Op
 }
@@ -28,7 +38,7 @@ func bytesToHexString(bytes []byte) string {
 	return fmt.Sprintf("%x", bytes)
 }
 
-func NewTrusteeApp(mgr network.PlatformManager, identity *ecdsa.PrivateKey, appConfig *network.AppConfig) *trusteeImpl {
+func NewTrusteeApp(mgr PlatformManager, identity *ecdsa.PrivateKey, appConfig *AppConfig) *trusteeImpl {
 	trustee := &trusteeImpl{
 		myMgr: mgr,
 		identity: identity,
@@ -85,9 +95,10 @@ func (t *trusteeImpl) verify(payload, sign, submitter []byte) bool {
 	return ecdsa.Verify(key, hash[:], s.R, s.S)
 }
 
-// generate reward transaction for miner and uncles of the block (BUT DO NOT ADD TRANSACTION TO BLOCK YET)
+// generate reward transaction for miner and uncles of the block ~(BUT DO NOT ADD TRANSACTION TO BLOCK YET)~
 // (note, uncles here are the node-ID of uncle blocks, prepopulated by the consensus layer when candidate block was created)
 func (t *trusteeImpl) NewMiningRewardTx(block consensus.Block) *consensus.Transaction {
+	var tx *consensus.Transaction
 	// build list of miner nodes for uncle blocks
 	uncleMiners := make([][]byte, len(block.UncleMiners()))
 	for i, uncleMiner := range block.UncleMiners() {
@@ -113,10 +124,12 @@ func (t *trusteeImpl) NewMiningRewardTx(block consensus.Block) *consensus.Transa
 		// make a signed transaction out of payload
 		if signature := t.sign(payload); len(signature) > 0 {
 			// return the signed transaction
-			return consensus.NewTransaction(payload, signature, t.myAddress)
+			tx = consensus.NewTransaction(payload, signature, t.myAddress)
+			block.AddTransaction(tx)
+			t.process(block, tx)
 		}
 	}
-	return nil
+	return tx
 }
 
 // verify reward transaction for network block's miner and uncles

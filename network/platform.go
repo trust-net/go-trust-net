@@ -12,19 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/nat"
 	"github.com/ethereum/go-ethereum/p2p/discover"
+	"github.com/ethereum/go-ethereum/crypto"
 	ethLog "github.com/ethereum/go-ethereum/log"
 )
-
-// a trustee app for trust node mining award management
-// we are abstracting the mining award management into an "app" instead of
-// directly implementing it as part of network protocol layer, so that
-// app can be extended to add token management APIs (e.g. balance query, balance transfer, etc)
-
-type Trustee interface {
-	NewMiningRewardTx(block consensus.Block) *consensus.Transaction
-	VerifyMiningRewardTx(block consensus.Block) bool
-	MiningRewardBalance(block consensus.Block, miner []byte) uint64
-}
 
 type PlatformManager interface {
 	// start the platform block producer
@@ -38,6 +28,8 @@ type PlatformManager interface {
 	Status(txId *core.Byte64) (consensus.Block, error)
 	// get a snapshot of current world state
 	State() *State
+	// get mining reward balance (nil, for self)
+	MiningRewardBalance(miner []byte) uint64
 	// get reference to Trustee app for the stack
 	Trustee() Trustee
 	// submit a transaction payload, and get a transaction ID
@@ -69,6 +61,7 @@ type platformManager struct {
 	config *PlatformConfig
 	lock sync.RWMutex
 	srv *p2p.Server
+	trustee *trusteeImpl
 	logger log.Logger
 	engine consensus.Consensus
 	stateDb db.Database
@@ -117,13 +110,16 @@ func NewPlatformManager(appConfig *AppConfig, srvConfig *ServiceConfig, appDb db
 	}
 
 	// TODO: change blockchain intialization to use genesis block header as parameters instead of hard coded genesis time
-    if engine, err := consensus.NewBlockChainConsensus(genesisTimeStamp, mgr.config.minerId, appDb); err != nil {
+    if engine, err := consensus.NewBlockChainConsensus(genesisTimeStamp, crypto.FromECDSAPub(&srvConfig.IdentityKey.PublicKey), appDb); err != nil {
 		mgr.logger.Error("Failed to create consensus engine: %s", err.Error())
 		return nil, err
     } else {
 	    	mgr.engine = engine
 	    	mgr.config.genesis = engine.Genesis()
-    }    
+    }
+    
+    // create trustee app
+    mgr.trustee = NewTrusteeApp(mgr, mgr.config.IdentityKey, &mgr.config.AppConfig)
 	mgr.logger.Debug("Created new instance of counter protocol manager")
 	return mgr, nil
 }
@@ -185,7 +181,14 @@ func (mgr *platformManager) State() *State {
 }
 
 func (mgr *platformManager) Trustee() Trustee {
-	return nil
+	return mgr.trustee
+}
+
+func (mgr *platformManager) MiningRewardBalance(miner []byte) uint64 {
+	if len(miner) == 0 {
+		miner = mgr.trustee.myAddress
+	}
+	return mgr.trustee.MiningRewardBalance(mgr.engine.BestBlock(), miner)
 }
 
 func (mgr *platformManager) Submit(txPayload, signature, submitter []byte) *core.Byte64 {
@@ -449,7 +452,21 @@ func (mgr *platformManager) handleGetBlockHashesRewindMsg(msg p2p.Msg, from *pee
 
 func (mgr *platformManager) processBlock(block consensus.Block, from *peerNode) error {
 	// process block transactions
-	for _,tx := range block.Transactions() {
+	txs := block.Transactions()
+	
+	// make sure there is atleast 1 application transaction
+	if len(txs) < 2 {
+		mgr.logger.Debug("Recieved greedy block with no application transaction!!!")
+		return core.NewCoreError(consensus.ERR_BLOCK_VALIDATION, "greedy block")
+	}
+	// process mining transaction
+	if !mgr.trustee.VerifyMiningRewardTx(block) {
+		mgr.logger.Debug("Mining reward validation failed")
+		return core.NewCoreError(consensus.ERR_BLOCK_VALIDATION, "invalid mining reward")
+	}
+	
+	// process application transactions
+	for _,tx := range txs[1:] {
 		// use application callback to process transaction
 		if !mgr.processTx(&tx, block) {
 			// there was some problem during processing the transaction
@@ -468,7 +485,7 @@ func (mgr *platformManager) processBlock(block consensus.Block, from *peerNode) 
 			return core.NewCoreError(consensus.ERR_DUPLICATE_BLOCK, "repeated block")
 		}
 		// broadcast block to peers
-		mgr.logger.Debug("Forwarding accepted network block from %s", from.Id())
+		mgr.logger.Debug("Forwarding accepted network block %x", block.Hash())
 		mgr.broadcast(block)
 	}
 	return nil
@@ -715,8 +732,8 @@ func (mgr *platformManager) validateAndAdd(handshake *HandshakeMsg, peer PeerNod
 	peerConf := AppConfig {
 		// identified application's shard/group on public p2p network
 		NetworkId: handshake.NetworkId,
-		// peer's node ID, extracted from p2p connection request
-		NodeId:	peer.NodeId(),
+		// peer's node ID, extracted from p2p connection request (we are adding back the leading 0x04 byte that is stripped by discover)
+		NodeId:	append([]byte{0x04}, peer.NodeId()...),
 		// peer node's name
 		NodeName: peer.Name(),
 		// application's protocol
@@ -772,6 +789,7 @@ func (mgr *platformManager) blockProducer() {
 			case tx := <- mgr.txQ:
 				if newBlock == nil {
 					newBlock = mgr.engine.NewCandidateBlock()
+					newBlock.AddTransaction(mgr.trustee.NewMiningRewardTx(newBlock))
 				}
 				mgr.logger.Debug("processing transaction id: %x", *tx.Id())
 				if mgr.processTx(tx, newBlock) {
@@ -801,16 +819,28 @@ func (mgr *platformManager) blockProducer() {
 					mgr.deadTxs[*tx.Id()] = true
 				}
 			case <- wait.C:
-				if newBlock == nil {
-					newBlock = mgr.engine.NewCandidateBlock()
-				}
-				mgr.logger.Debug("timed out waiting for transactions")
-				wait.Reset(maxTxWaitSec*10)
-				if !mgr.mineCandidateBlock(newBlock) {
-					mgr.logger.Debug("block failed to mine")
-					// add all transactions of the block to dead list
-					for _,tx := range newBlock.Transactions() {
-						mgr.deadTxs[*tx.Id()] = true
+//				if newBlock == nil {
+//					newBlock = mgr.engine.NewCandidateBlock()
+//					newBlock.AddTransaction(mgr.trustee.NewMiningRewardTx(newBlock))
+//				}
+//				mgr.logger.Debug("timed out waiting for transactions")
+//				wait.Reset(maxTxWaitSec*10)
+//				if !mgr.mineCandidateBlock(newBlock) {
+//					mgr.logger.Debug("block failed to mine")
+//					// add all transactions of the block to dead list
+//					for _,tx := range newBlock.Transactions() {
+//						mgr.deadTxs[*tx.Id()] = true
+//					}
+//				}
+				if newBlock != nil && len(newBlock.Transactions()) > 1 {
+					mgr.logger.Debug("mining %d transactions...", txCount)
+					wait.Reset(maxTxWaitSec*10)
+					if !mgr.mineCandidateBlock(newBlock) {
+						mgr.logger.Debug("block failed to mine")
+						// add all transactions of the block to dead list
+						for _,tx := range newBlock.Transactions() {
+							mgr.deadTxs[*tx.Id()] = true
+						}
 					}
 				}
 				newBlock = nil

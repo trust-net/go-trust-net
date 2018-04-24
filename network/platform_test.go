@@ -75,6 +75,9 @@ func TestNewPlatformManagerGoodArgs(t *testing.T) {
 	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
 		t.Errorf("Failed to create platform manager: %s", err)
 	} else {
+		if mgr.Trustee() == nil {
+			t.Errorf("platform did not initialize trustee")
+		}
 		if mgr.PeerCount() != 0 {
 			t.Errorf("did not expect any peers from new platform instance")
 		}
@@ -413,7 +416,7 @@ func TestPlatformManagerBlockProducer(t *testing.T) {
 	}
 }
 
-func TestPlatformManagerBlockProducerWaitTimeout(t *testing.T) {
+func TestBlockProducerWaitTimeoutNoGreedyBlock(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
@@ -432,13 +435,13 @@ func TestPlatformManagerBlockProducerWaitTimeout(t *testing.T) {
 		// start block producer
 		go mgr.blockProducer()
 		// DO NOT submit transaction
-		// sleep a bit longer than timeout, a block should be produced by then
+		// sleep a bit longer than timeout, no new block should be produced by then
 		time.Sleep(150 * time.Millisecond)
 		mgr.shutdownBlockProducer <- true
 		// get tip after timeout
 		post := mgr.engine.BestBlock()
-		if post.Depth().Uint64() <= pre.Depth().Uint64() {
-			t.Errorf("no blocks produced on timeout")
+		if post.Depth().Uint64() != pre.Depth().Uint64() {
+			t.Errorf("a new greedy blocks produced on timeout")
 		}
 	}
 }
@@ -672,5 +675,53 @@ func TestPlatformManagerPowSuspend(t *testing.T) {
 	
 	if err = mgr.Stop(); err != nil {
 		t.Errorf("Failed to stop platform manager: %s", err)
+	}
+}
+
+func TestProcessGreedyBlockValidation(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	conf := testNetworkConfig(nil, nil, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		// create a greedy block
+		block := newMockBlock("mock miner", []string{"uncle1", "uncle2"})
+		block.AddTransaction(mgr.trustee.NewMiningRewardTx(block))
+		
+		// process block
+		if err := mgr.processBlock(block, nil); err == nil || err.(*core.CoreError).Code() != consensus.ERR_BLOCK_VALIDATION {
+			t.Errorf("Failed to detect greedy block: %s", err)
+		}
+	}
+}
+
+
+func TestProcessMiningRewardUpdate(t *testing.T) {
+	log.SetLogLevel(log.DEBUG)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	conf := testNetworkConfig(nil, nil, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		// create two new blocks (one is candidate, another is network)
+		candidate := mgr.engine.NewCandidateBlock()
+		block := mgr.engine.NewCandidateBlock()
+		// add mining reward from candidate block into network block
+		block.AddTransaction(mgr.trustee.NewMiningRewardTx(candidate))
+		txPayload := []byte("test tx payload")
+		txSubmitter := []byte("test rx submitter")
+		txSignature := []byte("test rx signature")
+		block.AddTransaction(consensus.NewTransaction(txPayload, txSignature, txSubmitter))
+		// process block
+		if err := mgr.processBlock(block, NewPeerNode(nil, nil)); err != nil {
+			t.Errorf("Failed to process block: %s", err)
+		}
+		// get reward balance
+		if mgr.MiningRewardBalance(nil) != 1000000 {
+			t.Errorf("Failed to award mining reward, balance: %d", mgr.MiningRewardBalance(nil))
+		}
 	}
 }

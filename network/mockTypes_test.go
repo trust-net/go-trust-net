@@ -1,8 +1,7 @@
-package trustee
+package network
 
 import (
 	"github.com/trust-net/go-trust-net/core"
-	"github.com/trust-net/go-trust-net/network"
 	"github.com/trust-net/go-trust-net/consensus"
 )
 
@@ -17,16 +16,16 @@ type MockPlatformManager struct {
 	StatusBlock consensus.Block
 	StatusError error
 	IsStateCalled bool
-	StateState *network.State
+	StateState *State
 	IsTrusteeCalled bool
-	TrusteeApp network.Trustee
+	TrusteeApp Trustee
 	SubmitPayload []byte
 	SubmitSignature []byte
 	SubmitSubmitter []byte
 	SubmitId *core.Byte64
 	IsPeersCalled bool
-	PeersPeers []network.AppConfig
-	DisconnectApp *network.AppConfig
+	PeersPeers []AppConfig
+	DisconnectApp *AppConfig
 	DisconnectError error
 }
 
@@ -53,13 +52,18 @@ func (mgr *MockPlatformManager) Status(txId *core.Byte64) (consensus.Block, erro
 }
 
 // get a snapshot of current world state
-func (mgr *MockPlatformManager) State() *network.State {
+func (mgr *MockPlatformManager) State() *State {
 	mgr.IsStateCalled = true
 	return mgr.StateState
 }
 
+// get mining reward balance
+func (mgr *MockPlatformManager) MiningRewardBalance(miner []byte) uint64 {
+	return 0
+}
+
 // get a reference to trustee app
-func (mgr *MockPlatformManager) Trustee() network.Trustee {
+func (mgr *MockPlatformManager) Trustee() Trustee {
 	mgr.IsTrusteeCalled = true
 	return mgr.TrusteeApp
 }
@@ -74,13 +78,13 @@ func (mgr *MockPlatformManager) Submit(txPayload, signature, submitter []byte) *
 }
 
 // get a list of current peers
-func (mgr *MockPlatformManager) Peers() []network.AppConfig {
+func (mgr *MockPlatformManager) Peers() []AppConfig {
 	mgr.IsPeersCalled = true
 	return mgr.PeersPeers
 }
 
 // disconnect a specific peer
-func (mgr *MockPlatformManager) Disconnect(app *network.AppConfig) error {
+func (mgr *MockPlatformManager) Disconnect(app *AppConfig) error {
 	mgr.DisconnectApp = app
 	return mgr.DisconnectError
 }

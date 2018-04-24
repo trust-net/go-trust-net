@@ -1,4 +1,4 @@
-package trustee
+package network
 
 import (
 //	"fmt"
@@ -8,7 +8,6 @@ import (
 	"crypto/sha512"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/common"
-	"github.com/trust-net/go-trust-net/network"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -17,8 +16,8 @@ func TestNewTrusteeAppInterface(t *testing.T) {
 	defer log.SetLogLevel(log.NONE)
 	mgr := MockPlatformManager{}
 	nodekey, _ := crypto.GenerateKey()
-	config := &network.AppConfig{}
-	var trustee network.Trustee
+	config := &AppConfig{}
+	var trustee Trustee
 	trustee = NewTrusteeApp(&mgr, nodekey, config)
 	if trustee == nil {
 		t.Errorf("failed to get trustee instance")
@@ -30,7 +29,7 @@ func TestTrusteeSignPayload(t *testing.T) {
 	defer log.SetLogLevel(log.NONE)
 	mgr := MockPlatformManager{}
 	nodekey, _ := crypto.GenerateKey()
-	config := &network.AppConfig{}
+	config := &AppConfig{}
 	trustee := NewTrusteeApp(&mgr, nodekey, config)
 	if trustee == nil {
 		t.Errorf("failed to get trustee instance")
@@ -58,7 +57,7 @@ func TestTrusteeSignPayload(t *testing.T) {
 //	defer log.SetLogLevel(log.NONE)
 //	mgr := MockPlatformManager{}
 //	nodekey, _ := crypto.GenerateKey()
-//	config := &network.AppConfig{}
+//	config := &AppConfig{}
 //	trustee := NewTrusteeApp(&mgr, nodekey, config)
 //	if trustee == nil {
 //		t.Errorf("failed to get trustee instance")
@@ -76,7 +75,7 @@ func TestTrusteeVerifyPayload(t *testing.T) {
 	defer log.SetLogLevel(log.NONE)
 	mgr := MockPlatformManager{}
 	nodekey, _ := crypto.GenerateKey()
-	config := &network.AppConfig{}
+	config := &AppConfig{}
 	trustee := NewTrusteeApp(&mgr, nodekey, config)
 	if trustee == nil {
 		t.Errorf("failed to get trustee instance")
@@ -94,7 +93,7 @@ func TestTrusteeVerifyPayloadWrongKey(t *testing.T) {
 	defer log.SetLogLevel(log.NONE)
 	mgr := MockPlatformManager{}
 	nodekey, _ := crypto.GenerateKey()
-	config := &network.AppConfig{}
+	config := &AppConfig{}
 	trustee := NewTrusteeApp(&mgr, nodekey, config)
 	if trustee == nil {
 		t.Errorf("failed to get trustee instance")
@@ -114,7 +113,7 @@ func TestTrusteeVerifyPayloadWrongSignature(t *testing.T) {
 	defer log.SetLogLevel(log.NONE)
 	mgr := MockPlatformManager{}
 	nodekey, _ := crypto.GenerateKey()
-	config := &network.AppConfig{}
+	config := &AppConfig{}
 	trustee := NewTrusteeApp(&mgr, nodekey, config)
 	if trustee == nil {
 		t.Errorf("failed to get trustee instance")
@@ -135,7 +134,7 @@ func TestTrusteeVerifyPayloadWrongPayload(t *testing.T) {
 	defer log.SetLogLevel(log.NONE)
 	mgr := MockPlatformManager{}
 	nodekey, _ := crypto.GenerateKey()
-	config := &network.AppConfig{}
+	config := &AppConfig{}
 	trustee := NewTrusteeApp(&mgr, nodekey, config)
 	if trustee == nil {
 		t.Errorf("failed to get trustee instance")
@@ -172,7 +171,7 @@ func TestTrusteeNewMiningRewardTx(t *testing.T) {
 	defer log.SetLogLevel(log.NONE)
 	mgr := MockPlatformManager{}
 	nodekey, _ := crypto.GenerateKey()
-	config := &network.AppConfig{}
+	config := &AppConfig{}
 	trustee := NewTrusteeApp(&mgr, nodekey, config)
 	if trustee == nil {
 		t.Errorf("failed to get trustee instance")
@@ -232,33 +231,35 @@ func TestTrusteeVerifyMiningRewardTx(t *testing.T) {
 	mgr := MockPlatformManager{}
 	nodekey1, _ := crypto.GenerateKey()
 	nodekey2, _ := crypto.GenerateKey()
-	config := &network.AppConfig{}
+	config := &AppConfig{}
 	trustee1 := NewTrusteeApp(&mgr, nodekey1, config)
 	trustee2 := NewTrusteeApp(&mgr, nodekey2, config)
 
-	// build a mock block
-	block := newMockBlock(string(trustee1.myAddress), []string{"uncle1", "uncle2"})
-	// add new mining transaction from trustee1 to block
-	tx := trustee1.NewMiningRewardTx(block)
-	block.AddTransaction(tx)
-	// set initial values in block
-	block.Update([]byte(bytesToHexString(trustee1.myAddress)), []byte("3460000"))
-	block.Update([]byte(bytesToHexString([]byte("uncle1"))), []byte("40000"))
+	// build a mock candidate block
+	block1 := newMockBlock(string(trustee1.myAddress), []string{"uncle1", "uncle2"})
+	// add new mining transaction from trustee1 to candidate block
+	tx := trustee1.NewMiningRewardTx(block1)
+	// build another mock network block
+	block2 := newMockBlock(string(trustee1.myAddress), []string{"uncle1", "uncle2"})
+	block2.AddTransaction(tx)
+	// set initial values in network block
+	block2.Update([]byte(bytesToHexString(trustee1.myAddress)), []byte("3460000"))
+	block2.Update([]byte(bytesToHexString([]byte("uncle1"))), []byte("40000"))
 	// verify mining transaction with trustee2
-	if !trustee2.VerifyMiningRewardTx(block) {
+	if !trustee2.VerifyMiningRewardTx(block2) {
 		t.Errorf("mining reward transaction validation failed")
 	}
-	val, _ := block.Lookup([]byte(bytesToHexString(trustee1.myAddress)))
+	val, _ := block2.Lookup([]byte(bytesToHexString(trustee1.myAddress)))
 	number, _ := strconv.ParseUint(string(val), 10, 64)
 	if number != 4460000 {
 		t.Errorf("miner's reward not updated: %s", val)
 	}
-	val, _ = block.Lookup([]byte(bytesToHexString([]byte("uncle1"))))
+	val, _ = block2.Lookup([]byte(bytesToHexString([]byte("uncle1"))))
 	number, _ = strconv.ParseUint(string(val), 10, 64)
 	if number != 240000 {
 		t.Errorf("uncle1's reward not updated: %s", val)
 	}
-	val, _ = block.Lookup([]byte(bytesToHexString([]byte("uncle2"))))
+	val, _ = block2.Lookup([]byte(bytesToHexString([]byte("uncle2"))))
 	number, _ = strconv.ParseUint(string(val), 10, 64)
 	if number != 200000 {
 		t.Errorf("uncle2's reward not updated: %s", val)
@@ -271,7 +272,7 @@ func TestTrusteeMiningRewardBalance(t *testing.T) {
 	defer log.SetLogLevel(log.NONE)
 	mgr := MockPlatformManager{}
 	nodekey, _ := crypto.GenerateKey()
-	config := &network.AppConfig{}
+	config := &AppConfig{}
 	trustee := NewTrusteeApp(&mgr, nodekey, config)
 
 	// build a mock block
@@ -279,7 +280,6 @@ func TestTrusteeMiningRewardBalance(t *testing.T) {
 	// set mining reward balance value in block
 	block.Update([]byte(bytesToHexString(trustee.myAddress)), []byte("3460000"))
 	// ask trustee for the mining award balance
-	log.SetLogLevel(log.DEBUG)
 	number := trustee.MiningRewardBalance(block, trustee.myAddress)
 	if number != 3460000 {
 		t.Errorf("miner's reward not correct: %d", number)
