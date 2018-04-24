@@ -14,17 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-// a trustee app for trust node mining award management
-// we are abstracting the mining award management into an "app" instead of
-// directly implementing it as part of network protocol layer, so that
-// app can be extended to add token management APIs (e.g. balance query, balance transfer, etc)
-
-type Trustee interface {
-	NewMiningRewardTx(block consensus.Block) *consensus.Transaction
-	VerifyMiningRewardTx(block consensus.Block) bool
-	MiningRewardBalance(block consensus.Block, miner []byte) uint64
-}
-
+// Implements network.Trustee interface
 type trusteeImpl struct {
 	log log.Logger
 	myMgr network.PlatformManager

@@ -18,6 +18,8 @@ type MockPlatformManager struct {
 	StatusError error
 	IsStateCalled bool
 	StateState *network.State
+	IsTrusteeCalled bool
+	TrusteeApp network.Trustee
 	SubmitPayload []byte
 	SubmitSignature []byte
 	SubmitSubmitter []byte
@@ -54,6 +56,12 @@ func (mgr *MockPlatformManager) Status(txId *core.Byte64) (consensus.Block, erro
 func (mgr *MockPlatformManager) State() *network.State {
 	mgr.IsStateCalled = true
 	return mgr.StateState
+}
+
+// get a reference to trustee app
+func (mgr *MockPlatformManager) Trustee() network.Trustee {
+	mgr.IsTrusteeCalled = true
+	return mgr.TrusteeApp
 }
 
 // submit a transaction payload, and get a transaction ID

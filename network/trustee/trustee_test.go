@@ -18,7 +18,7 @@ func TestNewTrusteeAppInterface(t *testing.T) {
 	mgr := MockPlatformManager{}
 	nodekey, _ := crypto.GenerateKey()
 	config := &network.AppConfig{}
-	var trustee Trustee
+	var trustee network.Trustee
 	trustee = NewTrusteeApp(&mgr, nodekey, config)
 	if trustee == nil {
 		t.Errorf("failed to get trustee instance")

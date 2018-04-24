@@ -15,6 +15,17 @@ import (
 	ethLog "github.com/ethereum/go-ethereum/log"
 )
 
+// a trustee app for trust node mining award management
+// we are abstracting the mining award management into an "app" instead of
+// directly implementing it as part of network protocol layer, so that
+// app can be extended to add token management APIs (e.g. balance query, balance transfer, etc)
+
+type Trustee interface {
+	NewMiningRewardTx(block consensus.Block) *consensus.Transaction
+	VerifyMiningRewardTx(block consensus.Block) bool
+	MiningRewardBalance(block consensus.Block, miner []byte) uint64
+}
+
 type PlatformManager interface {
 	// start the platform block producer
 	Start() error
@@ -27,6 +38,8 @@ type PlatformManager interface {
 	Status(txId *core.Byte64) (consensus.Block, error)
 	// get a snapshot of current world state
 	State() *State
+	// get reference to Trustee app for the stack
+	Trustee() Trustee
 	// submit a transaction payload, and get a transaction ID
 	Submit(txPayload, signature, submitter []byte) *core.Byte64
 	// get a list of current peers
@@ -169,6 +182,10 @@ func (mgr *platformManager) State() *State {
 	return &State{
 		block: mgr.engine.BestBlock(),
 	}
+}
+
+func (mgr *platformManager) Trustee() Trustee {
+	return nil
 }
 
 func (mgr *platformManager) Submit(txPayload, signature, submitter []byte) *core.Byte64 {
