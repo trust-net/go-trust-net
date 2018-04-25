@@ -14,11 +14,11 @@ import (
 var genesisHash *core.Byte64
 var genesis *block
 var genesisTime = uint64(0x123456)
-var testNode = core.BytesToByte64([]byte("a test node"))
+var testNode = core.BytesToByte64([]byte("a test node")).Bytes()
 
 func init() {
 	db, _ := db.NewDatabaseInMem()
-	genesis := newBlock(core.BytesToByte64(nil), 0, 0, genesisTime, 0, core.BytesToByte64(nil), trie.NewMptWorldState(db))
+	genesis := newBlock(core.BytesToByte64(nil), 0, 0, genesisTime, 0, core.BytesToByte64(nil).Bytes(), trie.NewMptWorldState(db))
 	genesisHash = genesis.computeHash()
 }
 
@@ -628,7 +628,8 @@ func TestBlockChainConsensusUncleWeight(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	// simulate 3 different concurrent nodes updating their individual blockchain instances
-	node1, node2, node3 := core.BytesToByte64([]byte("test node #1")), core.BytesToByte64([]byte("test node #2")), core.BytesToByte64([]byte("test node #3"))
+//	node1, node2, node3 := core.BytesToByte64([]byte("test node #1")), core.BytesToByte64([]byte("test node #2")), core.BytesToByte64([]byte("test node #3"))
+	node1, node2, node3 := ([]byte("test node #1")), ([]byte("test node #2")), ([]byte("test node #3"))
 	db1, _ := db.NewDatabaseInMem()
 	chain1, _ := NewBlockChainConsensus(genesisTime, node1, db1)
 	db2, _ := db.NewDatabaseInMem()
@@ -727,7 +728,8 @@ func TestBlockChainConsensus(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	// simulate 3 different concurrent nodes updating their individual blockchain instances
-	node1, node2, node3 := core.BytesToByte64([]byte("test node #1")), core.BytesToByte64([]byte("test node #2")), core.BytesToByte64([]byte("test node #3"))
+//	node1, node2, node3 := core.BytesToByte64([]byte("test node #1")), core.BytesToByte64([]byte("test node #2")), core.BytesToByte64([]byte("test node #3"))
+	node1, node2, node3 := ([]byte("test node #1")), ([]byte("test node #2")), ([]byte("test node #3"))
 	db1, _ := db.NewDatabaseInMem()
 	chain1, _ := NewBlockChainConsensus(genesisTime, node1, db1)
 	db2, _ := db.NewDatabaseInMem()
@@ -737,7 +739,7 @@ func TestBlockChainConsensus(t *testing.T) {
 
 	// define an application for this consensus platform
 	counter := 0
-	nodeFunc := func(myChain *BlockChainConsensus, myNode *core.Byte64) {
+	nodeFunc := func(myChain *BlockChainConsensus, myNode []byte) {
 		// wait random time
 		time.Sleep(time.Millisecond * time.Duration(rand.Intn(200)))
 
@@ -745,7 +747,7 @@ func TestBlockChainConsensus(t *testing.T) {
 		candidate := myChain.NewCandidateBlock()
 		// add a transaction every 7th count
 		if (counter+1) % 7 == 0 {
-			candidate.AddTransaction(NewTransaction([]byte("some payload"), []byte("some random signature"), myNode.Bytes()))
+			candidate.AddTransaction(NewTransaction([]byte("some payload"), []byte("some random signature"), myNode))
 		}
 
 		// create a mining callback handler for this candidate block
@@ -824,7 +826,7 @@ func TestBlockChainConsensus(t *testing.T) {
 		myChain.MineCandidateBlock(candidate, miningCallback)
 		<-done
 		counter++
-		fmt.Printf("%s : chain depth: %d, chain weight: %d, Counter: %d\n", *myNode, myChain.Tip().Depth().Uint64(), myChain.Tip().Weight().Uint64(), counter)
+		fmt.Printf("%s : chain depth: %d, chain weight: %d, Counter: %d\n", myNode, myChain.Tip().Depth().Uint64(), myChain.Tip().Weight().Uint64(), counter)
 	}
 	
 	// run the node functions on 3 nodes concurrently

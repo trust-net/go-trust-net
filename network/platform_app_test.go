@@ -12,7 +12,7 @@ import (
 
 // this test is disabled since cannot get the two apps to connect with each other
 func testTwoApps(t *testing.T) {
-	log.SetLogLevel(log.DEBUG)
+	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db1, _ := db.NewDatabaseInMem()
 	db2, _ := db.NewDatabaseInMem()

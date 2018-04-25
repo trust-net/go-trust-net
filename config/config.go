@@ -21,7 +21,7 @@ type config struct{
 	key *ecdsa.PrivateKey
 	port *string
 	natEnabled *bool
-	id string
+	id []byte
 }
 
 type configParams struct {
@@ -60,8 +60,8 @@ func (c *config) BootnodeStrings() []string {
 	return nodes
 }
 
-func (c *config) Id() *string {
-	return &c.id
+func (c *config) Id() []byte {
+	return c.id
 }
 
 func (c *config) NodeName() *string {
@@ -206,7 +206,8 @@ func InitializeConfig(configFile *string, port *string, natEnabled *bool) error 
 					}
 					config.key = nodekey
 				}
-				config.id = discover.PubkeyID(&config.Key().PublicKey).String()
+//				config.id = discover.PubkeyID(&config.Key().PublicKey).String()
+				config.id = crypto.FromECDSAPub(&config.Key().PublicKey)
 				c = &config
 				return nil
 			}

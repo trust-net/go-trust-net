@@ -10,7 +10,7 @@ type AppConfig struct {
 	// identified application's shard/group on public p2p network
 	NetworkId core.Byte16
 	// peer's node ID, extracted from p2p connection request
-	NodeId string
+	NodeId []byte
 	// name of the node
 	NodeName string
 	// application's protocol ID
@@ -59,7 +59,7 @@ type PlatformConfig struct {
 	// genesis ID for the shard/group
 	genesis *core.Byte64
 	// miner ID for mining reward, extracted from p2p server
-	minerId *core.Byte64
+	minerId []byte
 }
 
 // container to access world state information

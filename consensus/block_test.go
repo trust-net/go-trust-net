@@ -12,8 +12,11 @@ import (
 )
 
 var previous = core.BytesToByte64([]byte("previous"))
-var testMiner = core.BytesToByte64([]byte("some random miner"))
-var testUncle = core.BytesToByte64([]byte("some random uncle"))
+var testMiner = core.BytesToByte64([]byte("some random miner")).Bytes()
+var testUncle = uncle{
+			hash: core.BytesToByte64([]byte("some random uncle")),
+			miner: testMiner,
+}
 var testSubmitter = []byte("some random submitter")
 
 func testTransaction(payload string) *Transaction {
@@ -38,10 +41,10 @@ func TestNewBlockWithTime(t *testing.T) {
 func TestNewBlockWithoutTime(t *testing.T) {
 	db, _ := db.NewDatabaseInMem()
 	ws := trie.NewMptWorldState(db)
-	before := uint64(time.Now().Unix())
+	before := uint64(time.Now().UnixNano())
 	weight, depth := uint64(23), uint64(20)
-	b := newBlock(previous, weight, depth, uint64(0), before-10000,  testMiner, ws)
-	after := uint64(time.Now().Unix())
+	b := newBlock(previous, weight, depth, uint64(0), before-1000000,  testMiner, ws)
+	after := uint64(time.Now().UnixNano())
 	if b.Timestamp().Uint64() < before {
 		t.Errorf("Block time stamp incorrect: Expected > '%d', Found '%d'", before, b.Timestamp().Uint64())
 	}
@@ -159,7 +162,7 @@ func TestComputeHash(t *testing.T) {
 	}
 	data := make([]byte,0, 64+64+8+64+8+len(orig.TXs)*(8+64+1)+8+len(orig.UNCLEs)*64)
 	data = append(data, orig.PHASH.Bytes()...)
-	data = append(data, orig.MINER.Bytes()...)
+	data = append(data, orig.MINER...)
 	data = append(data, orig.TS.Bytes()...)
 	data = append(data, orig.DELTA.Bytes()...)
 	state := orig.worldState.Hash()
@@ -305,7 +308,7 @@ func TestSerializeDeserialize(t *testing.T) {
 	if *copy.ParentHash() != *orig.ParentHash() {
 		t.Errorf("Block's parent hash incorrect after deserialization: Expected '%x', Found '%x'", orig.ParentHash(), copy.ParentHash())
 	}
-	if *copy.Miner() != *orig.Miner() {
+	if string(copy.Miner()) != string(orig.Miner()) {
 		t.Errorf("Block's miner incorrect after deserialization: Expected '%x', Found '%x'", orig.Miner(), copy.Miner())
 	}
 	if copy.Depth().Uint64() != orig.Depth().Uint64() {
@@ -376,7 +379,7 @@ type invalidType struct {}
 
 func (b *invalidType) ParentHash() *core.Byte64 {return nil}
 
-func (b *invalidType) Miner() *core.Byte64 {return nil}
+func (b *invalidType) Miner() []byte {return nil}
 
 func (b *invalidType) Nonce() *core.Byte8 {return nil}
 
@@ -397,6 +400,8 @@ func (b *invalidType) Lookup(key []byte) ([]byte, error) {return nil, nil}
 //func (b *invalidType) WorldState() trie.WorldState {return nil}
 
 func (b *invalidType) Uncles() []core.Byte64 {return nil}
+
+func (b *invalidType) UncleMiners() [][]byte {return nil}
 
 func (b *invalidType) Transactions() []Transaction {return nil}
 
