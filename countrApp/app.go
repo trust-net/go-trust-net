@@ -6,6 +6,7 @@ import (
 	"flag"
 	"time"
 	"fmt"
+	"encoding/hex"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/config"
 	"github.com/trust-net/go-trust-net/common"
@@ -173,6 +174,17 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 //						for _, peer := range peers {
 //							i++
 							fmt.Printf("% 10s\" [%010dT] : %x\n", "\"" + peer.NodeName, counterMgr.MiningRewardBalance(peer.NodeId), peer.NodeId)
+						}
+					case "balance":
+						wordScanner.Scan()
+						if account := wordScanner.Text(); len(account) == 0 {
+							fmt.Printf("usage: balance <account number>\n")
+						} else {
+							if bytes, err := hex.DecodeString(account); err == nil {
+								fmt.Printf("%010dT\n", counterMgr.MiningRewardBalance(bytes))
+							} else {
+								fmt.Printf("Invalid address: %s\n", err)
+							}
 						}
 					case "info":
 						state := counterMgr.State()

@@ -21,7 +21,7 @@ import (
 type Trustee interface {
 	NewMiningRewardTx(block consensus.Block) *consensus.Transaction
 	VerifyMiningRewardTx(block consensus.Block) bool
-	MiningRewardBalance(block consensus.Block, miner []byte) uint64
+	MiningRewardBalance(block consensus.Block, account []byte) uint64
 }
 
 // Implements network.Trustee interface
@@ -154,9 +154,9 @@ func (t *trusteeImpl) VerifyMiningRewardTx(block consensus.Block) bool {
 }
 
 // get node's reward balance based on world view of the block
-func (t *trusteeImpl) MiningRewardBalance(block consensus.Block, miner []byte) uint64 {
+func (t *trusteeImpl) MiningRewardBalance(block consensus.Block, account []byte) uint64 {
 	strVal := "0"
-	if val, err := block.Lookup([]byte(bytesToHexString(miner))); err == nil {
+	if val, err := block.Lookup([]byte(bytesToHexString(account))); err == nil {
 		strVal = string(val)
 	}
 	var value uint64
