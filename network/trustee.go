@@ -8,6 +8,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha512"
 	"github.com/trust-net/go-trust-net/log"
+	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/common"
 	"github.com/trust-net/go-trust-net/consensus"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -167,22 +168,45 @@ func (t *trusteeImpl) MiningRewardBalance(block consensus.Block, account []byte)
 	return value
 }
 
-func credit(block consensus.Block, account []byte, amount string) {
+func Credit(block consensus.Block, account []byte, amount string) error {
 	strVal := "0"
-	if val, err := block.Lookup(account); err == nil {
+	if val, err := block.Lookup(account); err == nil && len(val) > 0 {
 		strVal = string(val)
 	}
 	var value, delta uint64
 	var err error
 	if value, err = strconv.ParseUint(strVal, 10, 64); err != nil {
-		value = 0
+		return err
 	}
 	if delta, err = strconv.ParseUint(amount, 10, 64); err != nil {
-		delta = 0
+		return err
 	}
 	value += delta
 	strVal = strconv.FormatUint(value, 10)
 	block.Update(account, []byte(strVal))
+	return nil
+}
+
+func Debit(block consensus.Block, account []byte, amount string) error {
+	strVal := "0"
+	if val, err := block.Lookup(account); err == nil && len(val) > 0 {
+		strVal = string(val)
+	}
+	var value, delta uint64
+	var err error
+	if value, err = strconv.ParseUint(strVal, 10, 64); err != nil {
+		return err
+	}
+	if delta, err = strconv.ParseUint(amount, 10, 64); err != nil {
+		return err
+	}
+	if value < delta {
+		return core.NewCoreError(ERR_LOW_BALANCE, "insufficient fund")
+	}
+	value -= delta
+	strVal = strconv.FormatUint(value, 10)
+	block.Update(account, []byte(strVal))
+	return nil
 }
 
 func (t *trusteeImpl) process(block consensus.Block, tx *consensus.Transaction) bool {
@@ -226,7 +250,7 @@ func (t *trusteeImpl) process(block consensus.Block, tx *consensus.Transaction) 
 	// if op is valid, credit reward
 	if validOp && len(account) > 0 && len(amount) > 0 {
 		t.log.Debug("crediting miner %s with %s", account, amount)
-		credit(block, account, amount)
+		Credit(block, account, amount)
 	} else {
 		return false
 	}
@@ -256,7 +280,7 @@ func (t *trusteeImpl) process(block consensus.Block, tx *consensus.Transaction) 
 		// if op is valid, credit reward
 		if validOp && len(account) > 0 && len(amount) > 0 {
 			t.log.Debug("crediting uncle %s with %s", account, amount)
-			credit(block, account, amount)
+			Credit(block, account, amount)
 		} else {
 			return false
 		}

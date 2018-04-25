@@ -7,6 +7,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha512"
 	"github.com/trust-net/go-trust-net/log"
+	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -155,12 +156,61 @@ func TestTrusteeCredit(t *testing.T) {
 	// build a mock block
 	block := newMockBlock("miner", nil)
 	// process a credit
-	credit(block, []byte("account"), "34343")
+	if err := Credit(block, []byte("account"), "34343"); err != nil {
+		t.Errorf("account credit did not succeed: %s", err)
+	}
 	if val, _ := block.Lookup([]byte("account")); val == nil {
 		t.Errorf("account key not found")
 	} else {
 		parsed, _ := strconv.ParseUint(string(val), 10, 64)
 		if parsed != 34343 {
+			t.Errorf("incorrect amount: %s", val)
+		}
+	}
+}
+
+func TestTrusteeDebit(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	// build a mock block
+	block := newMockBlock("miner", nil)
+	// add some funds
+	if err := Credit(block, []byte("account"), "1000"); err != nil {
+		t.Errorf("account credit did not succeed: %s", err)
+	}
+	// process a debit
+	if err := Debit(block, []byte("account"), "100"); err != nil {
+		t.Errorf("account debit did not succeed: %s", err)
+	}
+	if val, _ := block.Lookup([]byte("account")); val == nil {
+		t.Errorf("account key not found")
+	} else {
+		parsed, _ := strconv.ParseUint(string(val), 10, 64)
+		if parsed != 900 {
+			t.Errorf("incorrect amount: %s", val)
+		}
+	}
+}
+
+func TestTrusteeDebitInsufficientFunds(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	// build a mock block
+	block := newMockBlock("miner", nil)
+	// add some funds
+	if err := Credit(block, []byte("account"), "1000"); err != nil {
+		t.Errorf("account credit did not succeed: %s", err)
+	}
+	// process a debit
+	if err := Debit(block, []byte("account"), "1001"); err == nil || err.(*core.CoreError).Code() != ERR_LOW_BALANCE {
+		t.Errorf("account debit did not detect low balance: %s", err)
+	}
+	// validate that account balance did not change
+	if val, _ := block.Lookup([]byte("account")); val == nil {
+		t.Errorf("account key not found")
+	} else {
+		parsed, _ := strconv.ParseUint(string(val), 10, 64)
+		if parsed != 1000 {
 			t.Errorf("incorrect amount: %s", val)
 		}
 	}
