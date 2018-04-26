@@ -182,7 +182,7 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 //						i := 0
 //						for _, peer := range peers {
 //							i++
-							fmt.Printf("% 10s\" [%010dT] : %x\n", "\"" + peer.NodeName, counterMgr.MiningRewardBalance(peer.NodeId), peer.NodeId)
+							fmt.Printf("% 10s\" [%010d RTU] : %x\n", "\"" + peer.NodeName, counterMgr.MiningRewardBalance(peer.NodeId), peer.NodeId)
 						}
 					case "balance":
 						wordScanner.Scan()
@@ -190,7 +190,7 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 							fmt.Printf("usage: balance <account number>\n")
 						} else {
 							if bytes, err := hex.DecodeString(account); err == nil {
-								fmt.Printf("%010dT\n", counterMgr.MiningRewardBalance(bytes))
+								fmt.Printf("%010d RTU\n", counterMgr.MiningRewardBalance(bytes))
 							} else {
 								fmt.Printf("Invalid address: %s\n", err)
 							}
@@ -219,7 +219,7 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 						fmt.Printf("#######################\n")
 						fmt.Printf("Node Name: %s\n", *config.NodeName())
 						fmt.Printf("Node ID  : %x\n", config.Id())
-						fmt.Printf("Reward   : %010dT\n", counterMgr.MiningRewardBalance(nil))
+						fmt.Printf("Reward   : %010d RTU\n", counterMgr.MiningRewardBalance(nil))
 						fmt.Printf("Network  : %s\n", *config.NetworkId())
 						fmt.Printf("TIP      : %x\n", state.Tip())
 						fmt.Printf("Depth    : %d\n", state.Depth())
@@ -275,8 +275,10 @@ func main() {
 //					amountS, _ = txs.Lookup([]byte(opCode.Source))
 //					fmt.Printf("Before Balance: %s -- %s \n", opCode.Source, amountS)
 					// We are NOT doing signed transactions, and hence xfer cannot be authenticated!!!
-					amount := fmt.Sprintf("%d", opCode.Delta)
+//					amount := fmt.Sprintf("%d", opCode.Delta)
+					amount := network.Uint64ToRtu(uint64(opCode.Delta))
 					var err error
+//					if err = network.Debit(txs.Block(), []byte(opCode.Source), amount); err != nil {
 					if err = network.Debit(txs.Block(), []byte(opCode.Source), amount); err != nil {
 						fmt.Printf("%s: %s <--debit--- %s\n%s", err, amount, opCode.Source, cmdPrompt)
 						return false
