@@ -154,8 +154,11 @@ func (t *trusteeImpl) VerifyMiningRewardTx(block consensus.Block) bool {
 	return t.process(block, &tx)
 }
 
-// get node's reward balance based on world view of the block
 func (t *trusteeImpl) MiningRewardBalance(block consensus.Block, account []byte) uint64 {
+	return MiningRewardBalance(block, account)
+}
+// get account's reward balance based on world view of the block
+func MiningRewardBalance(block consensus.Block, account []byte) uint64 {
 	strVal := "0"
 	if val, err := block.Lookup([]byte(bytesToHexString(account))); err == nil {
 		strVal = string(val)
@@ -168,6 +171,7 @@ func (t *trusteeImpl) MiningRewardBalance(block consensus.Block, account []byte)
 	return value
 }
 
+// account is byte array of the hex encoded string for account's bytes
 func Credit(block consensus.Block, account []byte, amount string) error {
 	strVal := "0"
 	if val, err := block.Lookup(account); err == nil && len(val) > 0 {
@@ -187,6 +191,7 @@ func Credit(block consensus.Block, account []byte, amount string) error {
 	return nil
 }
 
+// account is byte array of the hex encoded string for account's bytes
 func Debit(block consensus.Block, account []byte, amount string) error {
 	strVal := "0"
 	if val, err := block.Lookup(account); err == nil && len(val) > 0 {
@@ -201,7 +206,7 @@ func Debit(block consensus.Block, account []byte, amount string) error {
 		return err
 	}
 	if value < delta {
-		return core.NewCoreError(ERR_LOW_BALANCE, "insufficient fund")
+		return core.NewCoreError(ERR_LOW_BALANCE, fmt.Sprintf("insufficient fund: %d < %d", value, delta))
 	}
 	value -= delta
 	strVal = strconv.FormatUint(value, 10)

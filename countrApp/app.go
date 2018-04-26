@@ -29,18 +29,27 @@ var myId []byte
 // define a transaction payload structure
 type testTx struct {
 	Op string
+	Source string
 	Target string
 	Delta int64
 }
 
 func incrementTx(name string, delta int) []byte {
-	tx := testTx{"incr", name, int64(delta)}
+	tx := testTx{
+		Op: "incr",
+		Target: name,
+		Delta: int64(delta),
+	}
 	txPayload, _ := common.Serialize(tx)
 	return txPayload
 }
 
 func decrementTx(name string, delta int) []byte {
-	tx := testTx{"decr", name, int64(delta)}
+	tx := testTx{
+		Op: "decr",
+		Target: name,
+		Delta: int64(delta),
+	}
 	txPayload, _ := common.Serialize(tx)
 	return txPayload
 }
@@ -186,6 +195,24 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 								fmt.Printf("Invalid address: %s\n", err)
 							}
 						}
+					case "xfer":
+						wordScanner.Scan()
+						amount := wordScanner.Text()
+						wordScanner.Scan()
+						account := wordScanner.Text()
+						if len(amount) == 0 || len(account) == 0{
+							fmt.Printf("usage: xfer <amount> <account number>\n")
+						} else {
+							delta, _ := strconv.ParseInt(amount, 10, 64)
+							fmt.Printf("adding transaction: xfer %d --> %s\n", delta, account)
+							txPayload, _ := common.Serialize(testTx{
+								Op: "xfer",
+								Source: fmt.Sprintf("%x", config.Id()),
+								Target: account,
+								Delta: delta,
+							})
+							counterMgr.Submit(txPayload, nil, myId)
+						}
 					case "info":
 						state := counterMgr.State()
 						t := time.Unix(0,int64(state.Timestamp()))
@@ -242,6 +269,29 @@ func main() {
 					currVal += opCode.Delta
 				case "decr":
 					currVal -= opCode.Delta
+				case "xfer":
+//					amountS, _ := txs.Lookup([]byte(opCode.Target))
+//					fmt.Printf("Before Balance: %s -- %s \n", opCode.Target, amountS)
+//					amountS, _ = txs.Lookup([]byte(opCode.Source))
+//					fmt.Printf("Before Balance: %s -- %s \n", opCode.Source, amountS)
+					// We are NOT doing signed transactions, and hence xfer cannot be authenticated!!!
+					amount := fmt.Sprintf("%d", opCode.Delta)
+					var err error
+					if err = network.Debit(txs.Block(), []byte(opCode.Source), amount); err != nil {
+						fmt.Printf("%s: %s <--debit--- %s\n%s", err, amount, opCode.Source, cmdPrompt)
+						return false
+					}
+					if err = network.Credit(txs.Block(), []byte(opCode.Target), amount); err != nil {
+						fmt.Printf("Failed to credit: %s\n%s", err, cmdPrompt)
+						return false
+					}
+//					fmt.Printf("Xferred: %s -- %s --> %s\n", opCode.Source, amount, opCode.Target)
+//					fmt.Printf("Xferred: %s\n", amount)
+//					amountS, _ = txs.Lookup([]byte(opCode.Target))
+//					fmt.Printf("After Balance: %s -- %s \n", opCode.Target, amountS)
+//					amountS, _ = txs.Lookup([]byte(opCode.Source))
+//					fmt.Printf("After Balance: %s -- %s \n%s", opCode.Source, amountS, cmdPrompt)
+					return true
 			 	default:
 				 	fmt.Printf("Unknown opcode: %s\n%s", opCode.Op,cmdPrompt)
 				 	return false
