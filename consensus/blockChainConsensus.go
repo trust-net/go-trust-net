@@ -679,21 +679,21 @@ func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([]Block
 		c.logger.Error("fetched parent of descendent not on mainlist")
 		return descendents, core.NewCoreError(ERR_NOT_MAINLIST, "parent not on mainlist")
 	}
-	// loop over fetching chainNode and its mainlist descendents
 	count := 0
-	for childNode := c.findMainListChild(parentNode, nil); childNode != nil && count < max; count++{
+	// loop over fetching chainNode and its mainlist descendents
+	for node := parentNode; node != nil && count < max; {
 		// fetch actual block for this child node
-		if child, err := c.getBlock(childNode.hash()); err != nil {
-			c.logger.Error("failed to fetch descendent block: %s", err.Error())
+		if block, err := c.getBlock(node.hash()); err != nil {
+			c.logger.Error("failed to fetch block: %s", err.Error())
 			return descendents, err
 		} else {
 			// first fetch all uncles of this block
-			if (count + len(child.Uncles())) >= max {
+			if (count + len(block.Uncles())) >= max {
 					c.logger.Debug("skipping block since uncles also need to be included in next batch")
 					break
 			}
-			uncles := make([]Block, 0, len(child.Uncles()))
-			for _, hash := range child.Uncles() {
+			uncles := make([]Block, 0, len(block.Uncles()))
+			for _, hash := range block.Uncles() {
 				if uncle, err := c.getBlock(&hash); err != nil {
 					c.logger.Error("failed to fetch uncle block: %s", err.Error())
 					return descendents, err
@@ -704,12 +704,47 @@ func (c *BlockChainConsensus) Descendents(parent *core.Byte64, max int) ([]Block
 				}
 			}
 			descendents = append(descendents, uncles...)
-			c.logger.Debug("adding descendent block: %x", *child.Hash())
-			descendents = append(descendents, child)
+			// we do not want the starting parent block in list
+			if *block.Hash() != *parent {
+				c.logger.Debug("adding descendent block: %x", *block.Hash())
+				descendents = append(descendents, block)
+				count++
+			}
 		}
 		// move down descendent list
-		childNode = c.findMainListChild(childNode, nil)
+		node = c.findMainListChild(node, nil)
 	}
+	
+//	// loop over fetching chainNode and its mainlist descendents
+//	for childNode := c.findMainListChild(parentNode, nil); childNode != nil && count < max; count++{
+//		// fetch actual block for this child node
+//		if child, err := c.getBlock(childNode.hash()); err != nil {
+//			c.logger.Error("failed to fetch descendent block: %s", err.Error())
+//			return descendents, err
+//		} else {
+//			// first fetch all uncles of this block
+//			if (count + len(child.Uncles())) >= max {
+//					c.logger.Debug("skipping block since uncles also need to be included in next batch")
+//					break
+//			}
+//			uncles := make([]Block, 0, len(child.Uncles()))
+//			for _, hash := range child.Uncles() {
+//				if uncle, err := c.getBlock(&hash); err != nil {
+//					c.logger.Error("failed to fetch uncle block: %s", err.Error())
+//					return descendents, err
+//				} else {
+//					c.logger.Debug("adding uncle block: %x", *uncle.Hash())
+//					uncles = append(uncles, uncle)
+//					count++
+//				}
+//			}
+//			descendents = append(descendents, uncles...)
+//			c.logger.Debug("adding descendent block: %x", *child.Hash())
+//			descendents = append(descendents, child)
+//		}
+//		// move down descendent list
+//		childNode = c.findMainListChild(childNode, nil)
+//	}
 	
 	return descendents, nil
 }
