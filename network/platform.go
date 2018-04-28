@@ -335,7 +335,12 @@ func (mgr *platformManager) syncNode(best consensus.Block, node *peerNode) error
 	// lets assume our tip is the last known to us block on main blockchain
 	node.LastHash = best.Hash()
 	// wait until sync completes, or an error
-	for isSyncNeeded(best, node) {
+	syncNeeded := isSyncNeeded(best, node)
+	if !syncNeeded {
+		mgr.logger.Debug("Other node '%s' needs to sync up", node.Id())
+		return nil
+	}
+	for syncNeeded {
 		// suspend block production
 		if mgr.isRunning {
 			 mgr.Suspend()
@@ -365,9 +370,20 @@ func (mgr *platformManager) syncNode(best consensus.Block, node *peerNode) error
 				return nil
 		}
 		best = mgr.engine.BestBlock()
-//		if !mgr.isInShutdown {
-//			best = mgr.engine.BestBlock()
-//		}
+		syncNeeded = isSyncNeeded(best, node)
+	}
+	// before we resume block production, we want to announce uncle blocks of our next potentical candidate block
+	for _, uncle := range mgr.engine.NewCandidateBlock().Uncles() {
+		if block, err := mgr.engine.Block(&uncle); err == nil {
+			// first mark this peer as has seen this message, so we can stop cyclic receive immediately
+			node.AddTx(block.Hash())
+			node.Send(NewBlock, block.Spec())
+			mgr.logger.Debug("relayed uncle '%x' to %s", block.Hash(), node.Name())
+		} else {
+			// we had error fetching uncles for the candidate block :/
+			mgr.logger.Error("failed to fetch uncles of candidate block: %s", err)
+			return err
+		}
 	}
 	// resume block production
 	if !mgr.isRunning {
