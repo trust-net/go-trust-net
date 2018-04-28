@@ -719,7 +719,7 @@ func TestProcessMiningRewardUpdate(t *testing.T) {
 			t.Errorf("Failed to process block: %s", err)
 		}
 		// get reward balance
-		if mgr.MiningRewardBalance(nil) != 1000000 {
+		if mgr.MiningRewardBalance(nil).Uint64() != 1000000 {
 			t.Errorf("Failed to award mining reward, balance: %d", mgr.MiningRewardBalance(nil))
 		}
 	}
@@ -762,7 +762,7 @@ func TestProcessUncleRewardUpdate(t *testing.T) {
 			t.Errorf("Failed to process child block: %s", err)
 		}
 		// get reward balance
-		if mgr.MiningRewardBalance(nil) != 200000 + 1000000 + 1000000 {
+		if mgr.MiningRewardBalance(nil).Uint64() != 200000 + 1000000 + 1000000 {
 			t.Errorf("incorrect mining reward with uncle: %d", mgr.MiningRewardBalance(nil))
 		}
 	}

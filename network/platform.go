@@ -29,7 +29,7 @@ type PlatformManager interface {
 	// get a snapshot of current world state
 	State() *State
 	// get mining reward balance (nil, for self)
-	MiningRewardBalance(miner []byte) uint64
+	MiningRewardBalance(miner []byte) *RTU
 	// get reference to Trustee app for the stack
 	Trustee() Trustee
 	// submit a transaction payload, and get a transaction ID
@@ -184,7 +184,7 @@ func (mgr *platformManager) Trustee() Trustee {
 	return mgr.trustee
 }
 
-func (mgr *platformManager) MiningRewardBalance(miner []byte) uint64 {
+func (mgr *platformManager) MiningRewardBalance(miner []byte) *RTU {
 	if len(miner) == 0 {
 		miner = mgr.trustee.myAddress
 	}

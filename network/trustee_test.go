@@ -344,7 +344,7 @@ func TestTrusteeMiningRewardBalance(t *testing.T) {
 //	block.Update([]byte(bytesToHexString(trustee.myAddress)), []byte("3460000"))
 	block.Update([]byte(bytesToHexString(trustee.myAddress)), Uint64ToRtu(3460000).Bytes())
 	// ask trustee for the mining award balance
-	number := trustee.MiningRewardBalance(block, trustee.myAddress)
+	number := trustee.MiningRewardBalance(block, trustee.myAddress).Uint64()
 	if number != 3460000 {
 		t.Errorf("miner's reward not correct: %d", number)
 	}
@@ -354,10 +354,10 @@ func TestTrusteeMiningRewardBalance(t *testing.T) {
 func TestUint64ToRtu(t *testing.T) {
 	input := uint64(1234567890)
 	rtu1 := Uint64ToRtu(input)
-	if rtu1.Units != 1234 {
+	if rtu1.Units() != 1234 {
 		t.Errorf("incorrect units: %d, expected: %d, from %d / %d", rtu1.Units, input/RtuDivisor, input, RtuDivisor)
 	}
-	if rtu1.Decimals != 567890 {
+	if rtu1.Decimals() != 567890 {
 		t.Errorf("incorrect decimals: %d, expected: %d, from %d %% %d ", rtu1.Decimals, input%RtuDivisor, input, RtuDivisor)
 	}
 }
@@ -365,45 +365,53 @@ func TestUint64ToRtu(t *testing.T) {
 func TestRtuToUint64(t *testing.T) {
 	input := uint64(1234567890123456789)
 	rtu1 := Uint64ToRtu(input)
-	if rtu1.Units != 1234567890123 {
-		t.Errorf("incorrect units: %d, expected: %d, from %d / %d", rtu1.Units, input/RtuDivisor, input, RtuDivisor)
+	if rtu1.Units() != 1234567890123 {
+		t.Errorf("incorrect units: %d, expected: %d, from %d / %d", rtu1.Units(), input/RtuDivisor, input, RtuDivisor)
 	}
-	if rtu1.Decimals != 456789 {
-		t.Errorf("incorrect decimals: %d, expected: %d, from %d %% %d ", rtu1.Decimals, input%RtuDivisor, input, RtuDivisor)
+	if rtu1.Decimals() != 456789 {
+		t.Errorf("incorrect decimals: %d, expected: %d, from %d %% %d ", rtu1.Decimals(), input%RtuDivisor, input, RtuDivisor)
+	}
+}
+
+func TestRtuToString(t *testing.T) {
+	input := uint64(12345678901234567890)
+	rtu1 := Uint64ToRtu(input)
+	if rtu1.String() != "12345678901234.567890" {
+		t.Errorf("incorrect string: %s, expected: %s", rtu1.String(), "12345678901234.567890")
 	}
 }
 
 func TestBytes8ToRtu(t *testing.T) {
 	input := uint64(2^63 - 1)
 	rtu1 := BytesToRtu(core.Uint64ToByte8(input).Bytes())
-	if rtu1.Units != input / RtuDivisor {
-		t.Errorf("incorrect units: %d", rtu1.Units)
+	if rtu1.Units() != input / RtuDivisor {
+		t.Errorf("incorrect units: %d", rtu1.Units())
 	}
-	if rtu1.Decimals != input % RtuDivisor{
-		t.Errorf("incorrect decimals: %d", rtu1.Decimals)
-	}
-}
-
-func TestDoubleBytesToRtu(t *testing.T) {
-	units := uint64(1234567890)
-	decimals := uint64(987654321)
-	rtu1 := BytesToRtu(append(core.Uint64ToByte8(units).Bytes(), core.Uint64ToByte8(decimals).Bytes()...))
-	if rtu1.Units != 1234567890987 {
-		t.Errorf("incorrect units: %d, expected: %d", rtu1.Units,  1234567890987)
-	}
-	if rtu1.Decimals != 654321 {
-		t.Errorf("incorrect decimals: %d, expected: %d", rtu1.Decimals, 654321)
+	if rtu1.Decimals() != input % RtuDivisor{
+		t.Errorf("incorrect decimals: %d", rtu1.Decimals())
 	}
 }
+//
+//func TestDoubleBytesToRtu(t *testing.T) {
+//	units := uint64(1234567890)
+//	decimals := uint64(987654321)
+//	rtu1 := BytesToRtu(append(core.Uint64ToByte8(units).Bytes(), core.Uint64ToByte8(decimals).Bytes()...))
+//	if rtu1.Units() != 1234567890987 {
+//		t.Errorf("incorrect units: %d, expected: %d", rtu1.Units(),  1234567890987)
+//	}
+//	if rtu1.Decimals() != 654321 {
+//		t.Errorf("incorrect decimals: %d, expected: %d", rtu1.Decimals(), 654321)
+//	}
+//}
 
 func TestRtuToBytesToRtu(t *testing.T) {
 	input := uint64(1234567890987654)
 	rtu1 := Uint64ToRtu(input)
 	rtu2 := BytesToRtu(rtu1.Bytes())
-	if rtu2.Units != 1234567890 {
-		t.Errorf("incorrect units: %d, expected: %d, from %d / %d", rtu2.Units, input/RtuDivisor, input, RtuDivisor)
+	if rtu2.Units() != 1234567890 {
+		t.Errorf("incorrect units: %d, expected: %d, from %d / %d", rtu2.Units(), input/RtuDivisor, input, RtuDivisor)
 	}
-	if rtu2.Decimals != 987654 {
-		t.Errorf("incorrect decimals: %d, expected: %d, from %d %% %d ", rtu2.Decimals, input%RtuDivisor, input, RtuDivisor)
+	if rtu2.Decimals() != 987654 {
+		t.Errorf("incorrect decimals: %d, expected: %d, from %d %% %d ", rtu2.Decimals(), input%RtuDivisor, input, RtuDivisor)
 	}
 }

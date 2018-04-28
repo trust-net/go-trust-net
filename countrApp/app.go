@@ -105,9 +105,9 @@ func scanOps(scanner *bufio.Scanner) (ops []op) {
 
 func CLI(c chan int, counterMgr network.PlatformManager) {
 	config, _ := config.Config()
+	defer func() { c <- 1 }()
 	for {
 		fmt.Printf(cmdPrompt)
-		defer func() { c <- 1 }()
 		lineScanner := bufio.NewScanner(os.Stdin)
 		for lineScanner.Scan() {
 			line := lineScanner.Text()
@@ -182,7 +182,7 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 //						i := 0
 //						for _, peer := range peers {
 //							i++
-							fmt.Printf("% 10s\" [%010d RTU] : %x\n", "\"" + peer.NodeName, counterMgr.MiningRewardBalance(peer.NodeId), peer.NodeId)
+							fmt.Printf("% 10s\" [%s RTU] : %x\n", "\"" + peer.NodeName, counterMgr.MiningRewardBalance(peer.NodeId), peer.NodeId)
 						}
 					case "balance":
 						wordScanner.Scan()
@@ -190,7 +190,7 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 							fmt.Printf("usage: balance <account number>\n")
 						} else {
 							if bytes, err := hex.DecodeString(account); err == nil {
-								fmt.Printf("%010d RTU\n", counterMgr.MiningRewardBalance(bytes))
+								fmt.Printf("%s RTU\n", counterMgr.MiningRewardBalance(bytes))
 							} else {
 								fmt.Printf("Invalid address: %s\n", err)
 							}
@@ -219,7 +219,7 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 						fmt.Printf("#######################\n")
 						fmt.Printf("Node Name: %s\n", *config.NodeName())
 						fmt.Printf("Node ID  : %x\n", config.Id())
-						fmt.Printf("Reward   : %010d RTU\n", counterMgr.MiningRewardBalance(nil))
+						fmt.Printf("Reward   : %s RTU\n", counterMgr.MiningRewardBalance(nil))
 						fmt.Printf("Network  : %s\n", *config.NetworkId())
 						fmt.Printf("TIP      : %x\n", state.Tip())
 						fmt.Printf("Depth    : %d\n", state.Depth())

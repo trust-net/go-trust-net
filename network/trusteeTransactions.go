@@ -1,6 +1,7 @@
 package network
 
 import (
+	"fmt"
 	"github.com/trust-net/go-trust-net/core"
 )
 
@@ -17,7 +18,7 @@ const (
 	MinerAward = "1000000"
 	UncleAward = "200000"
 //	RtuDecimal = uint64(4)
-	RtuDivisor = 1000000
+	RtuDivisor = uint64(1000000)
 )
 
 func NewOp(opCode string) *Op {
@@ -32,45 +33,51 @@ func NewOp(opCode string) *Op {
 	}
 }
 
-type RTU struct {
-	Units uint64
-	Decimals uint64
-}
+type RTU uint64
 
 func (rtu *RTU) Bytes() []byte {
-	return append(core.Uint64ToByte8(rtu.Units).Bytes(), core.Uint64ToByte8(rtu.Decimals).Bytes()...)
+	return core.Uint64ToByte8(uint64(*rtu)).Bytes()
 }
 
 func (rtu *RTU) Uint64() uint64 {
-	return rtu.Units * RtuDivisor + (rtu.Decimals % RtuDivisor)
+	return uint64(*rtu)
+}
+
+func (rtu *RTU) Units() uint64 {
+	return uint64(*rtu) / RtuDivisor
+}
+
+func (rtu *RTU) Decimals() uint64 {
+	return uint64(*rtu) % RtuDivisor
+}
+
+func (rtu *RTU) String() string {
+	return fmt.Sprintf("%d.%d", rtu.Units(), rtu.Decimals())
 }
 
 func Uint64ToRtu(number uint64) *RTU {
-	rtu := RTU{
-		Units: number/RtuDivisor,
-		Decimals: number%RtuDivisor,
-	}
+	rtu := RTU(number)
 	return &rtu
 }
 func BytesToRtu(bytes []byte) *RTU {
-	if len(bytes) < 9 {
+//	if len(bytes) < 9 {
 		return Uint64ToRtu(core.BytesToByte8(bytes).Uint64())
-	} else {
-		units := core.BytesToByte8(bytes[:8]).Uint64()
-		decimals := core.BytesToByte8(bytes[8:]).Uint64()
-		divisor := uint64(1)
-		for divisor < decimals {
-			divisor = divisor * 10
-		}
-		for divisor > RtuDivisor {
-			divisor = divisor / 10
-			units = (units * 10) + (decimals / divisor)
-			decimals = decimals % divisor
-		}
-		rtu := RTU{
-			Units: units,
-			Decimals: decimals,
-		}
-		return &rtu
-	}
+//	} else {
+//		units := core.BytesToByte8(bytes[:8]).Uint64()
+//		decimals := core.BytesToByte8(bytes[8:]).Uint64()
+//		divisor := uint64(1)
+//		for divisor < decimals {
+//			divisor = divisor * 10
+//		}
+//		for divisor > RtuDivisor {
+//			divisor = divisor / 10
+//			units = (units * 10) + (decimals / divisor)
+//			decimals = decimals % divisor
+//		}
+//		rtu := RTU{
+//			Units: units,
+//			Decimals: decimals,
+//		}
+//		return &rtu
+//	}
 }
