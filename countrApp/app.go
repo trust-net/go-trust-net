@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/trust-net/go-trust-net/config"
+	"github.com/trust-net/go-trust-net/consensus"
 	"github.com/trust-net/go-trust-net/common"
 	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/network"
@@ -163,8 +164,8 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 							fmt.Printf("usage: incr <countr name> [<integer>] ...\n")
 						} else {
 							for _, op := range ops {
-								fmt.Printf("adding transaction: incr %s %d\n", op.name, op.delta)
-								counterMgr.Submit(incrementTx(op.name, op.delta), nil, myId)
+								fmt.Printf("adding transaction: incr %s %d\nTX ID: %x\n", op.name, op.delta,
+									*counterMgr.Submit(incrementTx(op.name, op.delta), nil, myId))
 							}
 						}
 					case "decr":
@@ -173,8 +174,8 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 							fmt.Printf("usage: decr <countr name> [<integer>] ...\n")
 						} else {
 							for _, op := range ops {
-								fmt.Printf("adding transaction: decr %s %d\n", op.name, op.delta)
-								counterMgr.Submit(decrementTx(op.name, op.delta), nil, myId)
+								fmt.Printf("adding transaction: decr %s %d\nTX ID: %x\n", op.name, op.delta,
+									*counterMgr.Submit(decrementTx(op.name, op.delta), nil, myId))
 							}
 						}
 					case "peers":
@@ -183,6 +184,31 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 //						for _, peer := range peers {
 //							i++
 							fmt.Printf("% 10s\" [%s RTU] : %x\n", "\"" + peer.NodeName, counterMgr.MiningRewardBalance(peer.NodeId), peer.NodeId)
+						}
+					case "tx":
+						wordScanner.Scan()
+						if tx := wordScanner.Text(); len(tx) == 0 {
+							fmt.Printf("usage: tx <transaction id>\n")
+						} else {
+							if bytes, err := hex.DecodeString(tx); err == nil {
+								if block, err := counterMgr.Status(core.BytesToByte64(bytes)); err == nil {
+									t := time.Unix(0,int64(block.Timestamp().Uint64()))
+									fmt.Printf("Transaction accepted at depth %d @ %s\n", block.Depth().Uint64(), t.Format("Mon Jan 2 15:04:05 UTC 2006"))
+								} else {
+									switch err.(*core.CoreError).Code() {
+										case consensus.ERR_TX_NOT_APPLIED:
+											if block == nil {
+												fmt.Printf("Transaction rejected\n")
+											} else {
+												fmt.Printf("Transaction not in canonical chain\n")
+											}
+										case consensus.ERR_TX_NOT_FOUND:
+											fmt.Printf("Transaction not submitted\n")
+									}
+								}
+							} else {
+								fmt.Printf("Invalid tx: %s\n", err)
+							}
 						}
 					case "balance":
 						wordScanner.Scan()
@@ -240,6 +266,14 @@ func CLI(c chan int, counterMgr network.PlatformManager) {
 	}
 }
 
+func lookup (txs *network.Transaction, key string) int64 {
+	currVal := int64(0)
+	if val, err := txs.Lookup([]byte(key)); err == nil {
+		currVal = int64(core.BytesToByte8(val).Uint64())
+	}
+	return currVal
+}
+
 func main() {
 	port := flag.String("port", "30303", "port to listen on")
 	fileName := flag.String("file", "", "config file name")
@@ -261,24 +295,15 @@ func main() {
 			return false
 		} else {
 			currVal := int64(0)
-			if val, err := txs.Lookup([]byte(opCode.Target)); err == nil {
-				currVal = int64(core.BytesToByte8(val).Uint64())
-			}
 			switch opCode.Op {
 				case "incr":
-					currVal += opCode.Delta
+					currVal = lookup(txs, opCode.Target) + opCode.Delta
 				case "decr":
-					currVal -= opCode.Delta
+					currVal = lookup(txs, opCode.Target) - opCode.Delta
 				case "xfer":
-//					amountS, _ := txs.Lookup([]byte(opCode.Target))
-//					fmt.Printf("Before Balance: %s -- %s \n", opCode.Target, amountS)
-//					amountS, _ = txs.Lookup([]byte(opCode.Source))
-//					fmt.Printf("Before Balance: %s -- %s \n", opCode.Source, amountS)
 					// We are NOT doing signed transactions, and hence xfer cannot be authenticated!!!
-//					amount := fmt.Sprintf("%d", opCode.Delta)
 					amount := network.Uint64ToRtu(uint64(opCode.Delta))
 					var err error
-//					if err = network.Debit(txs.Block(), []byte(opCode.Source), amount); err != nil {
 					if err = network.Debit(txs.Block(), []byte(opCode.Source), amount); err != nil {
 						fmt.Printf("%s: %s <--debit--- %s\n%s", err, amount, opCode.Source, cmdPrompt)
 						return false
@@ -287,18 +312,11 @@ func main() {
 						fmt.Printf("Failed to credit: %s\n%s", err, cmdPrompt)
 						return false
 					}
-//					fmt.Printf("Xferred: %s -- %s --> %s\n", opCode.Source, amount, opCode.Target)
-//					fmt.Printf("Xferred: %s\n", amount)
-//					amountS, _ = txs.Lookup([]byte(opCode.Target))
-//					fmt.Printf("After Balance: %s -- %s \n", opCode.Target, amountS)
-//					amountS, _ = txs.Lookup([]byte(opCode.Source))
-//					fmt.Printf("After Balance: %s -- %s \n%s", opCode.Source, amountS, cmdPrompt)
 					return true
 			 	default:
 				 	fmt.Printf("Unknown opcode: %s\n%s", opCode.Op,cmdPrompt)
 				 	return false
 			}
-//			fmt.Printf("%s: %d\n%s", opCode.Target, currVal, cmdPrompt)
 			return txs.Update([]byte(opCode.Target), core.Uint64ToByte8(uint64(currVal)).Bytes())
 		}
 	}
