@@ -206,13 +206,23 @@ func (t *MptWorldState) registerTransactionToTrie(txId, blockId *core.Byte64) er
 }
 
 func (t *MptWorldState) tombStone(put putter, currNode *node) {
-	if currNode.Tombstone != uninitialized {
-		currNode.Tombstone = marked
-		if err := put(currNode.hash(), currNode); err != nil {
-			t.logger.Error("failed to mark tombstone on node: %s", err.Error())
-		}
-//		t.logger.Debug("Maked tombstone on node: %x", *currNode.hash())
-	}
+	// START EXPLANATION
+	// current MPT implementation is wrong. leaf node is value-only with no hash for any indexes (lenght of keyhex is 0)
+	// this causes the hash of leaf node to be of value hash. This means, all keys with same value, will point to exact same
+	// leaf node (because leaf node would be hash of the value only). This causes a problem with cleanup, because once a key is
+	// deleted/updated, then the leaf node is marked tombstoned, which will get removed in next cleanup -- but this will cause
+	// all other keys that had this same value to be lost, since they all were pointing to this same leaf node
+	//
+	// Solution: do not mark tombstone on leaf node. this being a blockchain, a value once written, is always written. hence,
+	// safe to make assumption that leaf node will never get deleted/cleanedup
+	// END EXPLANATION
+//	if currNode.Tombstone != uninitialized {
+//		currNode.Tombstone = marked
+//		if err := put(currNode.hash(), currNode); err != nil {
+//			t.logger.Error("failed to mark tombstone on node: %s", err.Error())
+//		}
+////		t.logger.Debug("Maked tombstone on node: %x", *currNode.hash())
+//	}
 	currNode.Tombstone = unmarked
 }
 
@@ -232,6 +242,7 @@ func (t *MptWorldState) Update(key, value []byte) core.Byte64 {
 	defer t.lock.Unlock()
 	// convert key into hexadecimal nibbles
 	keyHex := makeHex(key)
+//	t.logger.Debug("Updating: %s [%x] --> %s", key, keyHex, value)
 	if newHash := t.updateDepthFirst(t.putState, t.getState, t.rootNode, keyHex, value); newHash != null {
 		// mark tombstone on old world state view of transaction trie root
 		t.txNode.Tombstone = marked
@@ -260,6 +271,7 @@ func (t *MptWorldState) updateDepthFirst(put putter, get getter, currNode *node,
 			t.logger.Error("Failed to update node: %s", err)
 			return null
 		}
+//		t.logger.Debug("Updating: %x --> %s\n%x", keyHex, value, *newHash)
 		return *newHash
 	}
 	
@@ -291,6 +303,7 @@ func (t *MptWorldState) updateDepthFirst(put putter, get getter, currNode *node,
 		t.logger.Error("Failed to update node: %s", err)
 		return null
 	}
+//	t.logger.Debug("Updating: %x --> %s\n%x", keyHex, value, newHash)
 	// return back recomputed hash of current node
 	return newHash
 }
