@@ -697,9 +697,8 @@ func TestProcessGreedyBlockValidation(t *testing.T) {
 	}
 }
 
-
 func TestProcessMiningRewardUpdate(t *testing.T) {
-	log.SetLogLevel(log.DEBUG)
+	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	conf := testNetworkConfig(nil, nil, nil)
@@ -720,8 +719,51 @@ func TestProcessMiningRewardUpdate(t *testing.T) {
 			t.Errorf("Failed to process block: %s", err)
 		}
 		// get reward balance
-		if mgr.MiningRewardBalance(nil) != 1000000 {
+		if mgr.MiningRewardBalance(nil).Uint64() != 1000000 {
 			t.Errorf("Failed to award mining reward, balance: %d", mgr.MiningRewardBalance(nil))
+		}
+	}
+}
+
+func TestProcessUncleRewardUpdate(t *testing.T) {
+	log.SetLogLevel(log.DEBUG)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	conf := testNetworkConfig(nil, nil, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		txPayload := []byte("test tx payload")
+		txSubmitter := []byte("test rx submitter")
+		txSignature := []byte("test rx signature")
+		// build a forked chain
+		discard := mgr.engine.NewCandidateBlock()
+		uncle := mgr.engine.NewCandidateBlock()
+		parent := mgr.engine.NewCandidateBlock()
+		uncle.AddTransaction(mgr.trustee.NewMiningRewardTx(discard))
+		uncle.AddTransaction(consensus.NewTransaction(txPayload, txSignature, txSubmitter))
+		if err := mgr.processBlock(uncle, NewPeerNode(nil, nil)); err != nil {
+			t.Errorf("Failed to process uncle block: %s", err)
+		}
+		parent.AddTransaction(mgr.trustee.NewMiningRewardTx(discard))
+		parent.AddTransaction(consensus.NewTransaction(txPayload, txSignature, txSubmitter))
+		if err := mgr.processBlock(parent, NewPeerNode(nil, nil)); err != nil {
+			t.Errorf("Failed to process parent block: %s", err)
+		}
+
+		// create a new child blocks
+		childDiscard := mgr.engine.NewCandidateBlock()
+		child := mgr.engine.NewCandidateBlock()
+		// add mining reward from candidate block into network block
+		child.AddTransaction(mgr.trustee.NewMiningRewardTx(childDiscard))
+		child.AddTransaction(consensus.NewTransaction(txPayload, txSignature, txSubmitter))
+		// process block
+		if err := mgr.processBlock(child, NewPeerNode(nil, nil)); err != nil {
+			t.Errorf("Failed to process child block: %s", err)
+		}
+		// get reward balance
+		if mgr.MiningRewardBalance(nil).Uint64() != 200000 + 1000000 + 1000000 {
+			t.Errorf("incorrect mining reward with uncle: %d", mgr.MiningRewardBalance(nil))
 		}
 	}
 }

@@ -58,8 +58,8 @@ func (mgr *MockPlatformManager) State() *State {
 }
 
 // get mining reward balance
-func (mgr *MockPlatformManager) MiningRewardBalance(miner []byte) uint64 {
-	return 0
+func (mgr *MockPlatformManager) MiningRewardBalance(miner []byte) *RTU {
+	return BytesToRtu(nil)
 }
 
 // get a reference to trustee app

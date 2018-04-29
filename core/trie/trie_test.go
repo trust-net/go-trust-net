@@ -194,6 +194,43 @@ func TestMptWorldStateRebaseNotExisting(t *testing.T) {
 	testWorldStateRebaseNotExisting(t, NewMptWorldState(db))
 }
 
+func TestMptWorldStateUpdateSameValueEndingPrefix(t *testing.T) {
+	log.SetLogLevel(log.DEBUG)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	ws := NewMptWorldState(db)
+	pre := ws.Update([]byte("key1_aa"), []byte("value1"))
+	post := ws.Update([]byte("key2_bb"), []byte("value1"))
+	if post != pre {
+		ws.Cleanup(pre)
+		pre = post
+	}
+	post = ws.Update([]byte("key3_ab"), []byte("value1"))
+	if post != pre {
+		ws.Cleanup(pre)
+		pre = post
+	}
+	post = ws.Update([]byte("key2_bb"), []byte("value2"))
+	if post != pre {
+		ws.Cleanup(pre)
+		pre = post
+	}
+	value, err := ws.Lookup([]byte("key1_aa"))
+	if err != nil {
+		t.Errorf("Lookup of updated key1_aa failed: %s", err)
+	}
+	if string(value) != "value1" {
+		t.Errorf("Incorrect update: Expected `%s`, Found `%s`", "value1", value)
+	}
+	value, err = ws.Lookup([]byte("key3_ab"))
+	if err != nil {
+		t.Errorf("Lookup of updated key3_ab failed: %s", err)
+	}
+	if string(value) != "value1" {
+		t.Errorf("Incorrect update: Expected `%s`, Found `%s`", "value1", value)
+	}
+}
+
 func testWorldStateRebaseNotExisting(t *testing.T, ws WorldState) {
 	// try rebasing to some non existing state
 	if err := ws.Rebase(*core.BytesToByte64([]byte("invalid state"))); err == nil {

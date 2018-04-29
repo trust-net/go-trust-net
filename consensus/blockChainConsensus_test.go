@@ -938,6 +938,56 @@ func TestBlockChainConsensusDescendents(t *testing.T) {
 	}
 }
 
+func TestBlockChainConsensusDescendentsWithParentUncles(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	c, err := NewBlockChainConsensus(genesisTime, testNode, db)
+	if err != nil || c == nil {
+		t.Errorf("failed to get blockchain consensus instance: %s", err)
+		return
+	}
+	
+	// add an uncle block to blockchain
+	_, uncle := extendChainWithUncle(c, t)	
+	if uncle == nil {
+		t.Errorf("failed to add uncle")
+		return
+	}
+	
+	// find current tip
+	tip := c.Tip()
+	// validate that tip has the uncle block
+	if len(tip.Uncles()) != 1 || tip.Uncles()[0] != *uncle.Hash() {
+		t.Errorf("tip does not have an uncle")
+	}
+	
+	// extend block chain down from tip with 2 blocks
+	if err := addChain(c, []Block{c.NewCandidateBlock()}); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+	if err := addChain(c, []Block{c.NewCandidateBlock()}); err != nil {
+		t.Errorf("failed to add block: %s", err)
+	}
+
+	uncleFound := false
+	// fetch descendents from original tip, should include tip's uncle
+	if descendents, err := c.Descendents(tip.Hash(), 10); err != nil {
+		t.Errorf("failed to get descendents: %s", err)
+	} else {
+		if len(descendents) != 3 {
+			t.Errorf("did not get all descendents: %d", len(descendents))
+		}
+		// check for ancector's uncle
+		for _, descendent := range descendents {
+			uncleFound = uncleFound || (*descendent.Hash() == *uncle.Hash()) 
+		}
+	}
+	if !uncleFound {
+		t.Errorf("uncle not included in descendents")
+	}
+}
+
 func extendChainWithUncle(c *BlockChainConsensus, t *testing.T) (*block, *block) {
 	// add an ancestor block to chain
 	ancestor := c.NewCandidateBlock()

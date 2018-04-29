@@ -8,6 +8,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha512"
 	"github.com/trust-net/go-trust-net/log"
+	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/common"
 	"github.com/trust-net/go-trust-net/consensus"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -21,7 +22,7 @@ import (
 type Trustee interface {
 	NewMiningRewardTx(block consensus.Block) *consensus.Transaction
 	VerifyMiningRewardTx(block consensus.Block) bool
-	MiningRewardBalance(block consensus.Block, account []byte) uint64
+	MiningRewardBalance(block consensus.Block, account []byte) *RTU
 }
 
 // Implements network.Trustee interface
@@ -153,36 +154,55 @@ func (t *trusteeImpl) VerifyMiningRewardTx(block consensus.Block) bool {
 	return t.process(block, &tx)
 }
 
-// get node's reward balance based on world view of the block
-func (t *trusteeImpl) MiningRewardBalance(block consensus.Block, account []byte) uint64 {
-	strVal := "0"
-	if val, err := block.Lookup([]byte(bytesToHexString(account))); err == nil {
-		strVal = string(val)
+func (t *trusteeImpl) MiningRewardBalance(block consensus.Block, account []byte) *RTU {
+	return MiningRewardBalance(block, []byte(bytesToHexString(account)))
+}
+// get account's reward balance based on world view of the block
+// account is byte array of the hex encoded string for account's bytes
+func MiningRewardBalance(block consensus.Block, account []byte) *RTU {
+//	if bytes, err := block.Lookup([]byte(bytesToHexString(account))); err == nil {
+	if bytes, err := block.Lookup(account); err == nil {
+		return BytesToRtu(bytes)
 	}
-	var value uint64
-	var err error
-	if value, err = strconv.ParseUint(strVal, 10, 64); err != nil {
-		value = 0
-	}
-	return value
+	return BytesToRtu(nil)
 }
 
-func credit(block consensus.Block, account []byte, amount string) {
-	strVal := "0"
-	if val, err := block.Lookup(account); err == nil {
-		strVal = string(val)
+// account is byte array of the hex encoded string for account's bytes
+func Credit(block consensus.Block, account []byte, delta *RTU) error {
+	bytes, _ := block.Lookup(account)
+	currVal := BytesToRtu(bytes)
+	newVal := currVal.Uint64() + delta.Uint64()
+	block.Update(account, Uint64ToRtu(newVal).Bytes())
+//	if val, err := block.Lookup(account); err == nil && len(val) > 0 {
+//		currVal = core.BytesToByte8(val).Uint64()
+////		strVal = string(val)
+//	}
+////	var value, delta uint64
+////	var err error
+////	if value, err = strconv.ParseUint(strVal, 10, 64); err != nil {
+////		return err
+////	}
+//	if delta, err := strconv.ParseUint(amount, 10, 64); err != nil {
+//		return err
+//	} else {
+//		currVal += delta
+//		block.Update(account, core.Uint64ToByte8(currVal).Bytes())
+//	}
+////	value += delta
+////	strVal = strconv.FormatUint(value, 10)
+////	block.Update(account, []byte(strVal))
+	return nil
+}
+
+// account is byte array of the hex encoded string for account's bytes
+func Debit(block consensus.Block, account []byte, delta *RTU) error {
+	bytes, _ := block.Lookup(account)
+	currVal := BytesToRtu(bytes).Uint64()
+	if currVal < delta.Uint64() {
+		return core.NewCoreError(ERR_LOW_BALANCE, fmt.Sprintf("insufficient fund: %d < %d", currVal, delta.Uint64()))
 	}
-	var value, delta uint64
-	var err error
-	if value, err = strconv.ParseUint(strVal, 10, 64); err != nil {
-		value = 0
-	}
-	if delta, err = strconv.ParseUint(amount, 10, 64); err != nil {
-		delta = 0
-	}
-	value += delta
-	strVal = strconv.FormatUint(value, 10)
-	block.Update(account, []byte(strVal))
+	block.Update(account, Uint64ToRtu(currVal - delta.Uint64()).Bytes())
+	return nil
 }
 
 func (t *trusteeImpl) process(block consensus.Block, tx *consensus.Transaction) bool {
@@ -202,7 +222,7 @@ func (t *trusteeImpl) process(block consensus.Block, tx *consensus.Transaction) 
 	// first op in transaction should be self mining award
 	validOp := true
 	var account []byte
-	var amount string
+	var amount uint64
 	for key, value := range ops[0].Params {
 		if key == ParamMiner {
 			if value != bytesToHexString(tx.Submitter) {
@@ -216,7 +236,12 @@ func (t *trusteeImpl) process(block consensus.Block, tx *consensus.Transaction) 
 				t.log.Error("incorrect amount for miner reward: %s", value)
 				validOp = false
 			} else {
-				amount = value
+				if val, err := strconv.ParseUint(value, 10, 64); err != nil {
+					t.log.Error("failed to parse amount for miner reward: %s", err)
+					validOp = false
+				} else {
+					amount = val
+				}
 			}
 		} else {
 			t.log.Error("incorrect parameters: %s -> %s", key, value)
@@ -224,15 +249,15 @@ func (t *trusteeImpl) process(block consensus.Block, tx *consensus.Transaction) 
 		}
 	}
 	// if op is valid, credit reward
-	if validOp && len(account) > 0 && len(amount) > 0 {
-		t.log.Debug("crediting miner %s with %s", account, amount)
-		credit(block, account, amount)
+	if validOp && len(account) > 0 && amount > 0 {
+		t.log.Debug("crediting miner %s with %d", account, amount)
+		Credit(block, account, Uint64ToRtu(amount))
 	} else {
 		return false
 	}
 	// subsequent ops in transaction should be uncle mining reward
 	for i, uncle := range block.UncleMiners() {
-		validOp, account, amount = true, nil, "0"
+		validOp, account, amount = true, nil, 0
 		for key, value := range ops[i+1].Params {
 			if key == ParamUncle {
 				if value != bytesToHexString(uncle) {
@@ -246,7 +271,12 @@ func (t *trusteeImpl) process(block consensus.Block, tx *consensus.Transaction) 
 					t.log.Error("incorrect amount for uncle mining reward: %s", value)
 					validOp = false
 				} else {
-					amount = value
+					if val, err := strconv.ParseUint(value, 10, 64); err != nil {
+						t.log.Error("failed to parse amount for uncle reward: %s", err)
+						validOp = false
+					} else {
+						amount = val
+					}
 				}
 			} else {
 				t.log.Error("incorrect parameters: %s -> %s", key, value)
@@ -254,9 +284,9 @@ func (t *trusteeImpl) process(block consensus.Block, tx *consensus.Transaction) 
 			}
 		}
 		// if op is valid, credit reward
-		if validOp && len(account) > 0 && len(amount) > 0 {
-			t.log.Debug("crediting uncle %s with %s", account, amount)
-			credit(block, account, amount)
+		if validOp && len(account) > 0 && amount > 0 {
+			t.log.Debug("crediting uncle %s with %d", account, amount)
+			Credit(block, account, Uint64ToRtu(amount))
 		} else {
 			return false
 		}

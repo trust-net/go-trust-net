@@ -98,6 +98,11 @@ type Transaction struct {
 	block consensus.Block
 }
 
+// get reference to transaction's block, for use with trustee methods
+func (tx *Transaction) Block() consensus.Block {
+	return tx.block
+}
+
 // provide application submitted transaction payload
 func (tx *Transaction) Payload() []byte {
 	return tx.Transaction.Payload

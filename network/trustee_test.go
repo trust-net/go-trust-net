@@ -1,12 +1,13 @@
 package network
 
 import (
-//	"fmt"
-	"strconv"
+	"fmt"
+//	"strconv"
     "testing"
 	"crypto/ecdsa"
 	"crypto/sha512"
 	"github.com/trust-net/go-trust-net/log"
+	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
@@ -155,13 +156,70 @@ func TestTrusteeCredit(t *testing.T) {
 	// build a mock block
 	block := newMockBlock("miner", nil)
 	// process a credit
-	credit(block, []byte("account"), "34343")
+	if err := Credit(block, []byte("account"), Uint64ToRtu(34343)); err != nil {
+		t.Errorf("account credit did not succeed: %s", err)
+	}
 	if val, _ := block.Lookup([]byte("account")); val == nil {
 		t.Errorf("account key not found")
 	} else {
-		parsed, _ := strconv.ParseUint(string(val), 10, 64)
+		parsed := BytesToRtu(val).Uint64()
+//		parsed, _ := strconv.ParseUint(string(val), 10, 64)
 		if parsed != 34343 {
 			t.Errorf("incorrect amount: %s", val)
+		}
+	}
+}
+
+func TestTrusteeDebit(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	// build a mock block
+	block := newMockBlock("miner", nil)
+	// add some funds
+	if err := Credit(block, []byte("account"), Uint64ToRtu(1000)); err != nil {
+		t.Errorf("account credit did not succeed: %s", err)
+	}
+	// process a debit
+	if err := Debit(block, []byte("account"), Uint64ToRtu(100)); err != nil {
+		t.Errorf("account debit did not succeed: %s", err)
+	}
+	if val, _ := block.Lookup([]byte("account")); val == nil {
+		t.Errorf("account key not found")
+	} else {
+		parsed := BytesToRtu(val).Uint64()
+//		parsed, _ := strconv.ParseUint(string(val), 10, 64)
+		if parsed != 900 {
+			t.Errorf("incorrect amount: %s", val)
+		}
+	}
+}
+
+func TestTrusteeDebitInsufficientFunds(t *testing.T) {
+	log.SetLogLevel(log.NONE)
+	defer log.SetLogLevel(log.NONE)
+	// build a mock block
+	block := newMockBlock("miner", nil)
+	// add some funds
+	if err := Credit(block, []byte("account"), Uint64ToRtu(1000)); err != nil {
+		t.Errorf("account credit did not succeed: %s", err)
+	}
+	if val, _ := block.Lookup([]byte("account")); val == nil {
+		t.Errorf("account key not found")
+	} else {
+		fmt.Printf("Credited amount: %d\n", BytesToRtu(val).Uint64())
+	}
+	// process a debit
+	if err := Debit(block, []byte("account"), Uint64ToRtu(1001)); err == nil || err.(*core.CoreError).Code() != ERR_LOW_BALANCE {
+		t.Errorf("account debit did not detect low balance: %d < %d", Uint64ToRtu(1000).Uint64(), Uint64ToRtu(1001).Uint64())
+	}
+	// validate that account balance did not change
+	if val, _ := block.Lookup([]byte("account")); val == nil {
+		t.Errorf("account key not found")
+	} else {
+		parsed := BytesToRtu(val).Uint64()
+//		parsed, _ := strconv.ParseUint(string(val), 10, 64)
+		if parsed != 1000 {
+			t.Errorf("incorrect amount: %d", parsed)
 		}
 	}
 }
@@ -243,24 +301,29 @@ func TestTrusteeVerifyMiningRewardTx(t *testing.T) {
 	block2 := newMockBlock(string(trustee1.myAddress), []string{"uncle1", "uncle2"})
 	block2.AddTransaction(tx)
 	// set initial values in network block
-	block2.Update([]byte(bytesToHexString(trustee1.myAddress)), []byte("3460000"))
-	block2.Update([]byte(bytesToHexString([]byte("uncle1"))), []byte("40000"))
+//	block2.Update([]byte(bytesToHexString(trustee1.myAddress)), []byte("3460000"))
+//	block2.Update([]byte(bytesToHexString([]byte("uncle1"))), []byte("40000"))
+	block2.Update([]byte(bytesToHexString(trustee1.myAddress)), Uint64ToRtu(3460000).Bytes())
+	block2.Update([]byte(bytesToHexString([]byte("uncle1"))), Uint64ToRtu(40000).Bytes())
 	// verify mining transaction with trustee2
 	if !trustee2.VerifyMiningRewardTx(block2) {
 		t.Errorf("mining reward transaction validation failed")
 	}
 	val, _ := block2.Lookup([]byte(bytesToHexString(trustee1.myAddress)))
-	number, _ := strconv.ParseUint(string(val), 10, 64)
+	number := BytesToRtu(val).Uint64()
+//	number, _ := strconv.ParseUint(string(val), 10, 64)
 	if number != 4460000 {
 		t.Errorf("miner's reward not updated: %s", val)
 	}
 	val, _ = block2.Lookup([]byte(bytesToHexString([]byte("uncle1"))))
-	number, _ = strconv.ParseUint(string(val), 10, 64)
+	number = BytesToRtu(val).Uint64()
+//	number, _ = strconv.ParseUint(string(val), 10, 64)
 	if number != 240000 {
 		t.Errorf("uncle1's reward not updated: %s", val)
 	}
 	val, _ = block2.Lookup([]byte(bytesToHexString([]byte("uncle2"))))
-	number, _ = strconv.ParseUint(string(val), 10, 64)
+	number = BytesToRtu(val).Uint64()
+//	number, _ = strconv.ParseUint(string(val), 10, 64)
 	if number != 200000 {
 		t.Errorf("uncle2's reward not updated: %s", val)
 	}
@@ -278,10 +341,77 @@ func TestTrusteeMiningRewardBalance(t *testing.T) {
 	// build a mock block
 	block := newMockBlock(string(trustee.myAddress), []string{"uncle1", "uncle2"})
 	// set mining reward balance value in block
-	block.Update([]byte(bytesToHexString(trustee.myAddress)), []byte("3460000"))
+//	block.Update([]byte(bytesToHexString(trustee.myAddress)), []byte("3460000"))
+	block.Update([]byte(bytesToHexString(trustee.myAddress)), Uint64ToRtu(3460000).Bytes())
 	// ask trustee for the mining award balance
-	number := trustee.MiningRewardBalance(block, trustee.myAddress)
+	number := trustee.MiningRewardBalance(block, trustee.myAddress).Uint64()
 	if number != 3460000 {
 		t.Errorf("miner's reward not correct: %d", number)
+	}
+}
+
+
+func TestUint64ToRtu(t *testing.T) {
+	input := uint64(1234567890)
+	rtu1 := Uint64ToRtu(input)
+	if rtu1.Units() != 1234 {
+		t.Errorf("incorrect units: %d, expected: %d, from %d / %d", rtu1.Units, input/RtuDivisor, input, RtuDivisor)
+	}
+	if rtu1.Decimals() != 567890 {
+		t.Errorf("incorrect decimals: %d, expected: %d, from %d %% %d ", rtu1.Decimals, input%RtuDivisor, input, RtuDivisor)
+	}
+}
+
+func TestRtuToUint64(t *testing.T) {
+	input := uint64(1234567890123456789)
+	rtu1 := Uint64ToRtu(input)
+	if rtu1.Units() != 1234567890123 {
+		t.Errorf("incorrect units: %d, expected: %d, from %d / %d", rtu1.Units(), input/RtuDivisor, input, RtuDivisor)
+	}
+	if rtu1.Decimals() != 456789 {
+		t.Errorf("incorrect decimals: %d, expected: %d, from %d %% %d ", rtu1.Decimals(), input%RtuDivisor, input, RtuDivisor)
+	}
+}
+
+func TestRtuToString(t *testing.T) {
+	input := uint64(12345678901234567890)
+	rtu1 := Uint64ToRtu(input)
+	if rtu1.String() != "12345678901234.567890" {
+		t.Errorf("incorrect string: %s, expected: %s", rtu1.String(), "12345678901234.567890")
+	}
+}
+
+func TestBytes8ToRtu(t *testing.T) {
+	input := uint64(2^63 - 1)
+	rtu1 := BytesToRtu(core.Uint64ToByte8(input).Bytes())
+	if rtu1.Units() != input / RtuDivisor {
+		t.Errorf("incorrect units: %d", rtu1.Units())
+	}
+	if rtu1.Decimals() != input % RtuDivisor{
+		t.Errorf("incorrect decimals: %d", rtu1.Decimals())
+	}
+}
+//
+//func TestDoubleBytesToRtu(t *testing.T) {
+//	units := uint64(1234567890)
+//	decimals := uint64(987654321)
+//	rtu1 := BytesToRtu(append(core.Uint64ToByte8(units).Bytes(), core.Uint64ToByte8(decimals).Bytes()...))
+//	if rtu1.Units() != 1234567890987 {
+//		t.Errorf("incorrect units: %d, expected: %d", rtu1.Units(),  1234567890987)
+//	}
+//	if rtu1.Decimals() != 654321 {
+//		t.Errorf("incorrect decimals: %d, expected: %d", rtu1.Decimals(), 654321)
+//	}
+//}
+
+func TestRtuToBytesToRtu(t *testing.T) {
+	input := uint64(1234567890987654)
+	rtu1 := Uint64ToRtu(input)
+	rtu2 := BytesToRtu(rtu1.Bytes())
+	if rtu2.Units() != 1234567890 {
+		t.Errorf("incorrect units: %d, expected: %d, from %d / %d", rtu2.Units(), input/RtuDivisor, input, RtuDivisor)
+	}
+	if rtu2.Decimals() != 987654 {
+		t.Errorf("incorrect decimals: %d, expected: %d, from %d %% %d ", rtu2.Decimals(), input%RtuDivisor, input, RtuDivisor)
 	}
 }
