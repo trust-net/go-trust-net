@@ -9,6 +9,7 @@ import (
 	"github.com/trust-net/go-trust-net/consensus"
 	"github.com/trust-net/go-trust-net/log"
 	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/trust-net/go-trust-net/common"
 )
 
 func TestNewPlatformManagerNullArgs(t *testing.T) {
@@ -524,7 +525,7 @@ func TestPlatformManagerBlockProducerMaxTransactionsPerBlock(t *testing.T) {
 	}
 }
 
-func TestPlatformManagerPowCallback(t *testing.T) {
+func TestPlatformManagerBlockProducerPowCallback(t *testing.T) {
 	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
@@ -560,6 +561,52 @@ func TestPlatformManagerPowCallback(t *testing.T) {
 		}
 		if hash != *block.Hash() {
 			t.Errorf("pow did not get block's hash")
+		}
+	}
+}
+
+func TestPlatformManagerProcessBlockPowCallback(t *testing.T) {
+	log.SetLogLevel(log.DEBUG)
+	defer log.SetLogLevel(log.NONE)
+	db, _ := db.NewDatabaseInMem()
+	called := 0
+	conf := testNetworkConfig(func(tx *Transaction) bool{
+			return true
+		}, func(powHash []byte, ts, delta uint64) bool {
+			called += 1
+			log.AppLogger().Debug("PoW Approver called %d times", called)
+			return true
+		}, nil)
+	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
+		t.Errorf("Failed to create platform manager: %s", err)
+	} else {
+		// override timeout
+		maxTxWaitSec = 100 * time.Millisecond
+		// start block producer
+		go mgr.blockProducer()
+		// submit transaction
+		txPayload := []byte("test tx payload")
+		txSubmitter := ([]byte("test rx submitter"))
+		txSignature := []byte("test rx signature")
+		mgr.Submit(txPayload, txSignature, txSubmitter)
+		// sleep a bit, hoping transaction will get processed till then
+		time.Sleep(100 * time.Millisecond)
+		mgr.shutdownBlockProducer <- true
+
+		// create a copy of current tip (to simulate a network block)
+		tip := mgr.engine.(*consensus.BlockChainConsensus).Tip()
+		data, _ := common.Serialize(tip.Spec())
+		block, _ := mgr.engine.DeserializeNetworkBlock(data)
+		for _, tx := range tip.Transactions() {
+			block.AddTransaction(&tx)
+		}
+		// process block (we expect duplicate block error, since its a copy of tip)
+		if err := mgr.processBlock(block, nil); err != nil && err.(*core.CoreError).Code() != consensus.ERR_DUPLICATE_BLOCK {
+			t.Errorf("Failed to process block: %s", err)
+		}
+		// check if PoW Approver was called when processing block
+		if called < 2 {
+			t.Errorf("pow approver only called %d times", called)
 		}
 	}
 }
@@ -726,7 +773,7 @@ func TestProcessMiningRewardUpdate(t *testing.T) {
 }
 
 func TestProcessUncleRewardUpdate(t *testing.T) {
-	log.SetLogLevel(log.DEBUG)
+	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	conf := testNetworkConfig(nil, nil, nil)
