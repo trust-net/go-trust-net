@@ -27,6 +27,8 @@ type Consensus interface {
 	MineCandidateBlock(b Block, cb MiningResultHandler)
 	// a PoW variant of the MineCandidateBlock method
 	MineCandidateBlockPoW(b Block, apprvr PowApprover, cb MiningResultHandler)
+	// a validation method to check correct PoW on network block
+	CheckNetworkBlockPoW(b Block, apprvr PowApprover) error
 	// query status of a transaction (its block details) in the canonical chain
 	TransactionStatus(txId *core.Byte64) (Block, error)
 	// deserialize data into network block, and will initialize the block with current canonical parent's

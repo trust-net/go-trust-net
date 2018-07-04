@@ -254,6 +254,21 @@ func (c *BlockChainConsensus) MineCandidateBlockPoW(b Block, apprvr PowApprover,
 	go c.mineCandidateBlock(blk, cb)
 }
 
+func (c *BlockChainConsensus) CheckNetworkBlockPoW(b Block, apprvr PowApprover) error {
+	blk := b.(*block)
+	if !blk.isNetworkBlock {
+		c.logger.Error("Hash check on non-network block")
+		return core.NewCoreError(ERR_BLOCK_VALIDATION, "non-network block")
+	}
+	blk.pow = apprvr
+	// mine the block
+	if blk.computeHash() == nil {
+		c.logger.Error("Failed to compute hash for block")
+		return core.NewCoreError(ERR_BLOCK_UNHASHED, "hash computation failed")
+	}
+	return nil
+}
+
 
 // submit a "filled" block for mining (executes as a goroutine)
 // it will mine the block and update canonical chain or abort if a new network block

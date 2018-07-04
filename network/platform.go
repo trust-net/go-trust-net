@@ -473,8 +473,15 @@ func (mgr *platformManager) processBlock(block consensus.Block, from *peerNode) 
 	// make sure there is atleast 1 application transaction
 	if len(txs) < 2 {
 		mgr.logger.Debug("Recieved greedy block with no application transaction!!!")
-		return core.NewCoreError(consensus.ERR_BLOCK_VALIDATION, "greedy block")
+		return core.NewCoreError(consensus.ERR_GREEDY_BLOCK, "greedy block")
 	}
+
+	// validate block has been mined correctly
+	if err := mgr.engine.CheckNetworkBlockPoW(block, consensus.PowApprover(mgr.config.PowApprover)); err != nil {
+		mgr.logger.Debug("Network block not mined correctly!!!")
+		return err
+	}
+
 	// process mining transaction
 	if !mgr.trustee.VerifyMiningRewardTx(block) {
 		mgr.logger.Debug("Mining reward validation failed")

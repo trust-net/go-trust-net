@@ -393,18 +393,8 @@ func TestPlatformManagerBlockProducer(t *testing.T) {
 	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
 		t.Errorf("Failed to create platform manager: %s", err)
 	} else {
-		// override timeout
-		maxTxWaitSec = 100 * time.Millisecond
-		// start block producer
-		go mgr.blockProducer()
-		// submit transaction
-		txPayload := []byte("test tx payload")
-		txSubmitter := ([]byte("test rx submitter"))
-		txSignature := []byte("test rx signature")
-		mgr.Submit(txPayload, txSignature, txSubmitter)
-		// sleep a bit, hoping transaction will get processed till then
-		time.Sleep(100 * time.Millisecond)
-		mgr.shutdownBlockProducer <- true
+		addValidBlock(mgr)
+
 		if !called {
 			t.Errorf("transaction never got processed")
 		}
@@ -543,18 +533,8 @@ func TestPlatformManagerBlockProducerPowCallback(t *testing.T) {
 	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
 		t.Errorf("Failed to create platform manager: %s", err)
 	} else {
-		// override timeout
-		maxTxWaitSec = 100 * time.Millisecond
-		// start block producer
-		go mgr.blockProducer()
-		// submit transaction
-		txPayload := []byte("test tx payload")
-		txSubmitter := ([]byte("test rx submitter"))
-		txSignature := []byte("test rx signature")
-		mgr.Submit(txPayload, txSignature, txSubmitter)
-		// sleep a bit, hoping transaction will get processed till then
-		time.Sleep(100 * time.Millisecond)
-		mgr.shutdownBlockProducer <- true
+		addValidBlock(mgr)
+
 		// query status of the transaction
 		if !called {
 			t.Errorf("pow approver never got called")
@@ -565,8 +545,23 @@ func TestPlatformManagerBlockProducerPowCallback(t *testing.T) {
 	}
 }
 
+func addValidBlock(mgr *platformManager) {
+	// override timeout
+	maxTxWaitSec = 100 * time.Millisecond
+	// start block producer
+	go mgr.blockProducer()
+	// submit transaction
+	txPayload := []byte("test tx payload")
+	txSubmitter := ([]byte("test rx submitter"))
+	txSignature := []byte("test rx signature")
+	mgr.Submit(txPayload, txSignature, txSubmitter)
+	// sleep a bit, hoping transaction will get processed till then
+	time.Sleep(100 * time.Millisecond)
+	mgr.shutdownBlockProducer <- true
+}
+
 func TestPlatformManagerProcessBlockPowCallback(t *testing.T) {
-	log.SetLogLevel(log.DEBUG)
+	log.SetLogLevel(log.NONE)
 	defer log.SetLogLevel(log.NONE)
 	db, _ := db.NewDatabaseInMem()
 	called := 0
@@ -580,26 +575,13 @@ func TestPlatformManagerProcessBlockPowCallback(t *testing.T) {
 	if mgr, err := NewPlatformManager(&conf.AppConfig, &conf.ServiceConfig, db); err != nil {
 		t.Errorf("Failed to create platform manager: %s", err)
 	} else {
-		// override timeout
-		maxTxWaitSec = 100 * time.Millisecond
-		// start block producer
-		go mgr.blockProducer()
-		// submit transaction
-		txPayload := []byte("test tx payload")
-		txSubmitter := ([]byte("test rx submitter"))
-		txSignature := []byte("test rx signature")
-		mgr.Submit(txPayload, txSignature, txSubmitter)
-		// sleep a bit, hoping transaction will get processed till then
-		time.Sleep(100 * time.Millisecond)
-		mgr.shutdownBlockProducer <- true
+		addValidBlock(mgr)
 
 		// create a copy of current tip (to simulate a network block)
 		tip := mgr.engine.(*consensus.BlockChainConsensus).Tip()
 		data, _ := common.Serialize(tip.Spec())
 		block, _ := mgr.engine.DeserializeNetworkBlock(data)
-		for _, tx := range tip.Transactions() {
-			block.AddTransaction(&tx)
-		}
+
 		// process block (we expect duplicate block error, since its a copy of tip)
 		if err := mgr.processBlock(block, nil); err != nil && err.(*core.CoreError).Code() != consensus.ERR_DUPLICATE_BLOCK {
 			t.Errorf("Failed to process block: %s", err)
@@ -734,11 +716,13 @@ func TestProcessGreedyBlockValidation(t *testing.T) {
 		t.Errorf("Failed to create platform manager: %s", err)
 	} else {
 		// create a greedy block
-		block := newMockBlock("mock miner", []string{"uncle1", "uncle2"})
+		block := mgr.engine.NewCandidateBlock()
+		data, _ := common.Serialize(block.Spec())
+		block, _ = mgr.engine.DeserializeNetworkBlock(data)
 		block.AddTransaction(mgr.trustee.NewMiningRewardTx(block))
 		
 		// process block
-		if err := mgr.processBlock(block, nil); err == nil || err.(*core.CoreError).Code() != consensus.ERR_BLOCK_VALIDATION {
+		if err := mgr.processBlock(block, nil); err == nil || err.(*core.CoreError).Code() != consensus.ERR_GREEDY_BLOCK {
 			t.Errorf("Failed to detect greedy block: %s", err)
 		}
 	}
@@ -754,20 +738,25 @@ func TestProcessMiningRewardUpdate(t *testing.T) {
 	} else {
 		// create two new blocks (one is candidate, another is network)
 		candidate := mgr.engine.NewCandidateBlock()
-		block := mgr.engine.NewCandidateBlock()
+		data, _ := common.Serialize(candidate.Spec())
+		block, _ := mgr.engine.DeserializeNetworkBlock(data)
 		// add mining reward from candidate block into network block
+		// (we are doing this so that state of network block does not get updated by reward trustee)
 		block.AddTransaction(mgr.trustee.NewMiningRewardTx(candidate))
 		txPayload := []byte("test tx payload")
 		txSubmitter := []byte("test rx submitter")
 		txSignature := []byte("test rx signature")
 		block.AddTransaction(consensus.NewTransaction(txPayload, txSignature, txSubmitter))
 		// process block
-		if err := mgr.processBlock(block, NewPeerNode(nil, nil)); err != nil {
+		// (we expect processing to fail because consensus engine will reject block, it did not go through real mining to have correct world state)
+		if err := mgr.processBlock(block, NewPeerNode(nil, nil)); err == nil || err.(*core.CoreError).Code() != consensus.ERR_STATE_INCORRECT {
 			t.Errorf("Failed to process block: %s", err)
 		}
 		// get reward balance
-		if mgr.MiningRewardBalance(nil).Uint64() != 1000000 {
-			t.Errorf("Failed to award mining reward, balance: %d", mgr.MiningRewardBalance(nil))
+		// (we are using block's state, instead of world state, because in our test setup this block is rejected and world state is never updated)
+		balance := mgr.trustee.MiningRewardBalance(block, candidate.Miner()).Uint64()
+		if  balance != 1000000 {
+			t.Errorf("Failed to award mining reward, balance: %d", balance)
 		}
 	}
 }
@@ -784,33 +773,37 @@ func TestProcessUncleRewardUpdate(t *testing.T) {
 		txSubmitter := []byte("test rx submitter")
 		txSignature := []byte("test rx signature")
 		// build a forked chain
-		discard := mgr.engine.NewCandidateBlock()
 		uncle := mgr.engine.NewCandidateBlock()
 		parent := mgr.engine.NewCandidateBlock()
-		uncle.AddTransaction(mgr.trustee.NewMiningRewardTx(discard))
+		uncle.AddTransaction(mgr.trustee.NewMiningRewardTx(uncle))
 		uncle.AddTransaction(consensus.NewTransaction(txPayload, txSignature, txSubmitter))
-		if err := mgr.processBlock(uncle, NewPeerNode(nil, nil)); err != nil {
+		if !mgr.mineCandidateBlock(uncle) {
 			t.Errorf("Failed to process uncle block: %s", err)
 		}
-		parent.AddTransaction(mgr.trustee.NewMiningRewardTx(discard))
+		parent.AddTransaction(mgr.trustee.NewMiningRewardTx(parent))
 		parent.AddTransaction(consensus.NewTransaction(txPayload, txSignature, txSubmitter))
-		if err := mgr.processBlock(parent, NewPeerNode(nil, nil)); err != nil {
+		if !mgr.mineCandidateBlock(parent) {
 			t.Errorf("Failed to process parent block: %s", err)
 		}
 
-		// create a new child blocks
+		// create a new child block from network by serialize/de-serialize a new candidate block
 		childDiscard := mgr.engine.NewCandidateBlock()
-		child := mgr.engine.NewCandidateBlock()
+		data, _ := common.Serialize(childDiscard.Spec())
+		child, _ := mgr.engine.DeserializeNetworkBlock(data)
+
 		// add mining reward from candidate block into network block
 		child.AddTransaction(mgr.trustee.NewMiningRewardTx(childDiscard))
 		child.AddTransaction(consensus.NewTransaction(txPayload, txSignature, txSubmitter))
+
 		// process block
-		if err := mgr.processBlock(child, NewPeerNode(nil, nil)); err != nil {
+		if err := mgr.processBlock(child, NewPeerNode(nil, nil)); err == nil || err.(*core.CoreError).Code() != consensus.ERR_STATE_INCORRECT {
 			t.Errorf("Failed to process child block: %s", err)
 		}
+
 		// get reward balance
-		if mgr.MiningRewardBalance(nil).Uint64() != 200000 + 1000000 + 1000000 {
-			t.Errorf("incorrect mining reward with uncle: %d", mgr.MiningRewardBalance(nil))
+		balance := mgr.trustee.MiningRewardBalance(child, childDiscard.Miner()).Uint64()
+		if  balance != 200000 + 1000000 + 1000000 {
+			t.Errorf("incorrect mining reward with uncle: %d", balance)
 		}
 	}
 }
