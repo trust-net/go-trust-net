@@ -476,12 +476,6 @@ func (mgr *platformManager) processBlock(block consensus.Block, from *peerNode) 
 		return core.NewCoreError(consensus.ERR_GREEDY_BLOCK, "greedy block")
 	}
 
-	// validate block has been mined correctly
-	if err := mgr.engine.CheckNetworkBlockPoW(block, consensus.PowApprover(mgr.config.PowApprover)); err != nil {
-		mgr.logger.Debug("Network block not mined correctly!!!")
-		return err
-	}
-
 	// process mining transaction
 	if !mgr.trustee.VerifyMiningRewardTx(block) {
 		mgr.logger.Debug("Mining reward validation failed")
@@ -496,6 +490,13 @@ func (mgr *platformManager) processBlock(block consensus.Block, from *peerNode) 
 			return core.NewCoreError(consensus.ERR_INVALID_TX, "transaction error")
 		}
 	}
+
+	// validate block has been mined correctly
+	if err := mgr.engine.CheckNetworkBlockPoW(block, consensus.PowApprover(mgr.config.PowApprover)); err != nil {
+		mgr.logger.Debug("Network block not mined correctly!!!")
+		return err
+	}
+
 	// submit block for acceptance
 	if err := mgr.engine.AcceptNetworkBlock(block); err != nil {
 		return err

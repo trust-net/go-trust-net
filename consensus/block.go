@@ -8,6 +8,7 @@ import (
 	"github.com/trust-net/go-trust-net/core"
 	"github.com/trust-net/go-trust-net/core/trie"
 	"github.com/trust-net/go-trust-net/common"
+	"github.com/trust-net/go-trust-net/log"
 )
 
 var (
@@ -262,6 +263,7 @@ func (b *block) computeHash() *core.Byte64 {
 				
 				// if a network block, then 1st hash MUST be correct
 				if !isPoWDone && b.isNetworkBlock {
+					log.AppLogger().Error("PoW check failed for network block computed hash: %x", hash)
 					// return an error
 					return core.NewCoreError(ERR_HASH_INCORRECT, "invalid hash on network block")
 				}
